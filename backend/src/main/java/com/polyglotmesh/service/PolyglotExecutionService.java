@@ -1,35 +1,61 @@
 package com.polyglotmesh.service;
+
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 import org.springframework.stereotype.Service;
 
-@Service 
-public class PolyglotExecutionService {
-public String executePython(String code) {
-    try(Context context = Context.newBuilder("python").allowAllAccess(false).build()){
-        Value result = context.eval("python",code);
-if(result.isString()){
-    return result.asString();
-}
-return result.toString();
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 
-    } 
-        
-    catch (Exception e) {
-        return "Python execution error :" + e.getMessage();
+@Service
+public class PolyglotExecutionService {
+
+    public String executePython(String code) {
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        try (Context context = Context.newBuilder("python")
+                .allowAllAccess(false)
+                .out(output)
+                .err(output)
+                .build()) {
+
+            context.eval("python", code);
+
+            return output.toString(StandardCharsets.UTF_8);
+
+        } catch (Exception e) {
+            return "Python execution error: " + e.getMessage();
+        }
     }
-}
-public String executeJavaScript(String code) {
-    try (Context context = Context.newBuilder("js").allowAllAccess(false).build()){
-         Value result = context.eval("js", code);
+
+    public String executeJavaScript(String code) {
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        try (Context context = Context.newBuilder("js")
+                .allowAllAccess(false)
+                .out(output)
+                .err(output)
+                .build()) {
+
+            Value result = context.eval("js", code);
+
+            String consoleOutput = output.toString(StandardCharsets.UTF_8);
+
+            if (!consoleOutput.isEmpty()) {
+                return consoleOutput;
+            }
 
             if (result.isString()) {
                 return result.asString();
             }
+
             return result.toString();
-    }
-     catch (Exception e) {
+
+        } catch (Exception e) {
             return "JavaScript execution error: " + e.getMessage();
         }
-}
+    }
 }
