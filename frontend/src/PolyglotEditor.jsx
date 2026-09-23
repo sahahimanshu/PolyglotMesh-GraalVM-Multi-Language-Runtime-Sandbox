@@ -29,7 +29,15 @@ const languages = {
 function PolyglotEditor() {
   const [selectedLanguage, setSelectedLanguage] = useState("Java");
 
+  // Stores the code currently being edited
+  const [code, setCode] = useState(languages.Java.code);
+
   const currentLanguage = languages[selectedLanguage];
+
+  const handleLanguageChange = (language) => {
+    setSelectedLanguage(language);
+    setCode(languages[language].code);
+  };
 
   return (
     <div className="polyglot-page">
@@ -60,7 +68,7 @@ function PolyglotEditor() {
         </header>
 
 
-       
+        {/* LANGUAGE TABS */}
         <div className="language-bar">
 
           {Object.keys(languages).map((language) => (
@@ -70,7 +78,7 @@ function PolyglotEditor() {
               className={`language-tab ${
                 selectedLanguage === language ? "active" : ""
               }`}
-              onClick={() => setSelectedLanguage(language)}
+              onClick={() => handleLanguageChange(language)}
             >
 
               <span
@@ -88,32 +96,66 @@ function PolyglotEditor() {
         </div>
 
 
-        
+        {/* MONACO EDITOR */}
         <div className="editor-wrapper">
 
           <Editor
             height="300px"
             theme="vs-dark"
+
             language={currentLanguage.language}
-            value={currentLanguage.code}
+
+            value={code}
+
+            onChange={(value) => {
+              setCode(value || "");
+            }}
+
             options={{
               automaticLayout: true,
+
               minimap: {
                 enabled: false,
               },
+
               fontSize: 14,
+
               lineHeight: 22,
+
               padding: {
                 top: 25,
                 bottom: 20,
               },
+
               scrollBeyondLastLine: false,
+
               wordWrap: "on",
+
               renderLineHighlight: "line",
+
               cursorBlinking: "smooth",
+
               smoothScrolling: true,
+
+              suggestOnTriggerCharacters: true,
+
+              tabSize: 4,
             }}
           />
+
+        </div>
+
+
+        {/* RUN BAR */}
+        <div className="run-bar">
+
+          <button className="run-button">
+            ▶ Run Code
+          </button>
+
+          <span className="selected-runtime">
+            {selectedLanguage}
+          </span>
 
         </div>
 
@@ -134,6 +176,7 @@ function PolyglotEditor() {
             </div>
 
           </div>
+
 
           <div className="output-content">
 

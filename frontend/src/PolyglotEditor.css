@@ -160,7 +160,7 @@
 }
 
 
-/* LANGUAGE BUTTON */
+
 
 .language-tab {
   display: flex;
@@ -407,4 +407,61 @@
 
     padding: 18px;
   }
+}
+
+.run-bar {
+  height: 58px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 0 20px;
+
+  background: #0c1525;
+
+  border-bottom: 1px solid #293a55;
+}
+
+.run-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 9px 18px;
+
+  border: none;
+  border-radius: 7px;
+
+  background: #2563eb;
+
+  color: white;
+
+  font-size: 13px;
+  font-weight: 600;
+
+  cursor: pointer;
+
+  transition: all 0.2s ease;
+}
+
+.run-button:hover {
+  background: #3478f6;
+
+  box-shadow:
+    0 6px 18px rgba(37, 99, 235, 0.3);
+
+  transform: translateY(-1px);
+}
+
+.run-button:active {
+  transform: translateY(0);
+}
+
+.selected-runtime {
+  color: #71839c;
+
+  font-family: Consolas, monospace;
+
+  font-size: 12px;
 }
