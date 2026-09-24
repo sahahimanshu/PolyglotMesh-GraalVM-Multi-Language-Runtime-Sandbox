@@ -5,7 +5,6 @@ import org.graalvm.polyglot.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 
 @Service
@@ -17,6 +16,9 @@ public class PolyglotExecutionService {
 
         try (Context context = Context.newBuilder("python")
                 .allowAllAccess(false)
+                .allowHostAccess(org.graalvm.polyglot.HostAccess.NONE)
+                .allowHostClassLookup(className -> false)
+                .allowIO(false)
                 .out(output)
                 .err(output)
                 .build()) {
@@ -36,13 +38,17 @@ public class PolyglotExecutionService {
 
         try (Context context = Context.newBuilder("js")
                 .allowAllAccess(false)
+                .allowHostAccess(org.graalvm.polyglot.HostAccess.NONE)
+                .allowHostClassLookup(className -> false)
+                .allowIO(false)
                 .out(output)
                 .err(output)
                 .build()) {
 
             Value result = context.eval("js", code);
 
-            String consoleOutput = output.toString(StandardCharsets.UTF_8);
+            String consoleOutput =
+                    output.toString(StandardCharsets.UTF_8);
 
             if (!consoleOutput.isEmpty()) {
                 return consoleOutput;
