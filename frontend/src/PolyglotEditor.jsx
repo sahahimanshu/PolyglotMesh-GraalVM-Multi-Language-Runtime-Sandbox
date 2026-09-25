@@ -28,15 +28,67 @@ const languages = {
 
 function PolyglotEditor() {
   const [selectedLanguage, setSelectedLanguage] = useState("Java");
-
-  // Stores the code currently being edited
   const [code, setCode] = useState(languages.Java.code);
+
+  // Stores backend execution output
+  const [output, setOutput] = useState("Ready to execute code...");
+
+  // Shows whether code is currently executing
+  const [isRunning, setIsRunning] = useState(false);
 
   const currentLanguage = languages[selectedLanguage];
 
   const handleLanguageChange = (language) => {
     setSelectedLanguage(language);
     setCode(languages[language].code);
+    setOutput("Ready to execute code...");
+  };
+
+  const handleRunCode = async () => {
+
+    if (selectedLanguage === "Java") {
+      setOutput("Java execution is not available yet.");
+      return;
+    }
+
+    setIsRunning(true);
+    setOutput("Executing...");
+
+    try {
+
+      const endpoint =
+        selectedLanguage === "Python"
+          ? "http://localhost:8080/api/execute/python"
+          : "http://localhost:8080/api/execute/javascript";
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "text/plain",
+        },
+
+        body: code,
+      });
+
+      const result = await response.text();
+
+      if (!response.ok) {
+        setOutput(`Execution failed: ${result}`);
+        return;
+      }
+
+      setOutput(result || "Code executed successfully.");
+
+    } catch (error) {
+
+      setOutput(
+        "Unable to connect to PolyglotMesh backend. Make sure Spring Boot is running on port 8080."
+      );
+
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   return (
@@ -68,7 +120,7 @@ function PolyglotEditor() {
         </header>
 
 
-        {/* LANGUAGE TABS */}
+        
         <div className="language-bar">
 
           {Object.keys(languages).map((language) => (
@@ -96,7 +148,7 @@ function PolyglotEditor() {
         </div>
 
 
-        {/* MONACO EDITOR */}
+      
         <div className="editor-wrapper">
 
           <Editor
@@ -146,11 +198,14 @@ function PolyglotEditor() {
         </div>
 
 
-        {/* RUN BAR */}
         <div className="run-bar">
 
-          <button className="run-button">
-            ▶ Run Code
+          <button
+            className="run-button"
+            onClick={handleRunCode}
+            disabled={isRunning}
+          >
+            {isRunning ? "⏳ Running..." : "▶ Run Code"}
           </button>
 
           <span className="selected-runtime">
@@ -160,7 +215,7 @@ function PolyglotEditor() {
         </div>
 
 
-        {/* OUTPUT */}
+        
         <section className="output-section">
 
           <div className="output-header">
@@ -183,7 +238,7 @@ function PolyglotEditor() {
             <span className="output-line"></span>
 
             <span>
-              Ready to execute code...
+              {output}
             </span>
 
           </div>
@@ -191,7 +246,6 @@ function PolyglotEditor() {
         </section>
 
 
-        {/* FOOTER */}
         <footer className="polyglot-footer">
 
           <span className="footer-brand">
