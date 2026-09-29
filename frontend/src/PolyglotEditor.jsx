@@ -28,12 +28,13 @@ const languages = {
 
 function PolyglotEditor() {
   const [selectedLanguage, setSelectedLanguage] = useState("Java");
+
   const [code, setCode] = useState(languages.Java.code);
 
-  // Stores backend execution output
-  const [output, setOutput] = useState("Ready to execute code...");
+  const [output, setOutput] = useState(
+    "Ready to execute code..."
+  );
 
-  // Shows whether code is currently executing
   const [isRunning, setIsRunning] = useState(false);
 
   const currentLanguage = languages[selectedLanguage];
@@ -47,11 +48,14 @@ function PolyglotEditor() {
   const handleRunCode = async () => {
 
     if (selectedLanguage === "Java") {
-      setOutput("Java execution is not available yet.");
+      setOutput(
+        "Java execution is not available yet."
+      );
       return;
     }
 
     setIsRunning(true);
+
     setOutput("Executing...");
 
     try {
@@ -74,11 +78,16 @@ function PolyglotEditor() {
       const result = await response.text();
 
       if (!response.ok) {
-        setOutput(`Execution failed: ${result}`);
+        setOutput(
+          `Execution failed: ${result}`
+        );
+
         return;
       }
 
-      setOutput(result || "Code executed successfully.");
+      setOutput(
+        result || "Code executed successfully."
+      );
 
     } catch (error) {
 
@@ -87,7 +96,9 @@ function PolyglotEditor() {
       );
 
     } finally {
+
       setIsRunning(false);
+
     }
   };
 
@@ -96,7 +107,9 @@ function PolyglotEditor() {
 
       <div className="polyglot-container">
 
-        {/* HEADER */}
+       
+       
+
         <header className="polyglot-header">
 
           <div className="brand-section">
@@ -106,145 +119,223 @@ function PolyglotEditor() {
             </div>
 
             <div className="brand-info">
-              <h1>PolyglotMesh</h1>
-              <p>Multi-Language Runtime Sandbox</p>
+
+              <h1>
+                PolyglotMesh
+              </h1>
+
+              <p>
+                Multi-Language Runtime Sandbox
+              </p>
+
             </div>
 
           </div>
 
+
           <div className="runtime-status">
+
             <span className="status-dot"></span>
-            <span>GraalVM Runtime</span>
+
+            <span>
+              GraalVM Runtime
+            </span>
+
           </div>
 
         </header>
 
 
-        
+
         <div className="language-bar">
 
-          {Object.keys(languages).map((language) => (
+          {Object.keys(languages).map(
+            (language) => (
 
-            <button
-              key={language}
-              className={`language-tab ${
-                selectedLanguage === language ? "active" : ""
-              }`}
-              onClick={() => handleLanguageChange(language)}
-            >
+              <button
+                key={language}
 
-              <span
-                className={`language-icon ${language.toLowerCase()}`}
+                className={`language-tab ${
+                  selectedLanguage === language
+                    ? "active"
+                    : ""
+                }`}
+
+                onClick={() =>
+                  handleLanguageChange(language)
+                }
               >
-                {languages[language].icon}
-              </span>
 
-              <span>{language}</span>
+                <span
+                  className={`language-icon ${language.toLowerCase()}`}
+                >
+                  {languages[language].icon}
+                </span>
 
-            </button>
+                <span>
+                  {language}
+                </span>
 
-          ))}
+              </button>
 
-        </div>
-
-
-      
-        <div className="editor-wrapper">
-
-          <Editor
-            height="300px"
-            theme="vs-dark"
-
-            language={currentLanguage.language}
-
-            value={code}
-
-            onChange={(value) => {
-              setCode(value || "");
-            }}
-
-            options={{
-              automaticLayout: true,
-
-              minimap: {
-                enabled: false,
-              },
-
-              fontSize: 14,
-
-              lineHeight: 22,
-
-              padding: {
-                top: 25,
-                bottom: 20,
-              },
-
-              scrollBeyondLastLine: false,
-
-              wordWrap: "on",
-
-              renderLineHighlight: "line",
-
-              cursorBlinking: "smooth",
-
-              smoothScrolling: true,
-
-              suggestOnTriggerCharacters: true,
-
-              tabSize: 4,
-            }}
-          />
-
-        </div>
-
-
-        <div className="run-bar">
-
-          <button
-            className="run-button"
-            onClick={handleRunCode}
-            disabled={isRunning}
-          >
-            {isRunning ? "⏳ Running..." : "▶ Run Code"}
-          </button>
-
-          <span className="selected-runtime">
-            {selectedLanguage}
-          </span>
+            )
+          )}
 
         </div>
 
 
         
-        <section className="output-section">
 
-          <div className="output-header">
+        <div className="workspace">
 
-            <div className="output-title">
 
-              <span className="terminal-icon">
-                &gt;_
+          
+
+          <div className="editor-pane">
+
+            <div className="pane-header">
+
+              <span>
+                CODE EDITOR
               </span>
 
-              <span>OUTPUT</span>
+              <span className="pane-language">
+                {selectedLanguage}
+              </span>
+
+            </div>
+
+
+            <div className="editor-wrapper">
+
+              <Editor
+                height="100%"
+
+                theme="vs-dark"
+
+                language={
+                  currentLanguage.language
+                }
+
+                value={code}
+
+                onChange={(value) => {
+                  setCode(value || "");
+                }}
+
+                options={{
+
+                  automaticLayout: true,
+
+                  minimap: {
+                    enabled: false,
+                  },
+
+                  fontSize: 14,
+
+                  lineHeight: 22,
+
+                  padding: {
+                    top: 20,
+                    bottom: 20,
+                  },
+
+                  scrollBeyondLastLine: false,
+
+                  wordWrap: "on",
+
+                  renderLineHighlight: "line",
+
+                  cursorBlinking: "smooth",
+
+                  smoothScrolling: true,
+
+                  suggestOnTriggerCharacters: true,
+
+                  tabSize: 4,
+
+                  roundedSelection: false,
+
+                }}
+
+              />
+
+            </div>
+
+
+            {/* =========================
+                RUN BAR
+            ========================== */}
+
+            <div className="run-bar">
+
+              <button
+                className="run-button"
+
+                onClick={handleRunCode}
+
+                disabled={isRunning}
+              >
+
+                {isRunning
+                  ? "⏳ Running..."
+                  : "▶ Run Code"}
+
+              </button>
+
+
+              <span className="selected-runtime">
+
+                {selectedLanguage}
+
+              </span>
 
             </div>
 
           </div>
 
 
-          <div className="output-content">
+          
 
-            <span className="output-line"></span>
+          <section className="output-section">
 
-            <span>
-              {output}
-            </span>
+            <div className="output-header">
 
-          </div>
+              <div className="output-title">
 
-        </section>
+                <span className="terminal-icon">
+                  &gt;_
+                </span>
 
+                <span>
+                  CONSOLE OUTPUT
+                </span>
+
+              </div>
+
+              <span className="console-status">
+                Sandbox
+              </span>
+
+            </div>
+
+
+            <div className="output-content">
+
+              <span className="output-line"></span>
+
+              <pre className="output-text">
+                {output}
+              </pre>
+
+            </div>
+
+          </section>
+
+        </div>
+
+
+        
 
         <footer className="polyglot-footer">
 
