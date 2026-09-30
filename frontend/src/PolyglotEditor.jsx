@@ -3,6 +3,18 @@ import Editor from "@monaco-editor/react";
 import "./PolyglotEditor.css";
 
 const languages = {
+  Python: {
+    language: "python",
+    icon: "🐍",
+    code: `print("Hello from PolyglotMesh")`,
+  },
+
+  JavaScript: {
+    language: "javascript",
+    icon: "JS",
+    code: `console.log("Hello from JavaScript");`,
+  },
+
   Java: {
     language: "java",
     icon: "☕",
@@ -12,54 +24,44 @@ const languages = {
     }
 }`,
   },
-
-  Python: {
-    language: "python",
-    icon: "🐍",
-    code: `print("Hello from Python")`,
-  },
-
-  JavaScript: {
-    language: "javascript",
-    icon: "JS",
-    code: `console.log("Hello from JavaScript");`,
-  },
 };
 
 function PolyglotEditor() {
-  const [selectedLanguage, setSelectedLanguage] = useState("Java");
-
-  const [code, setCode] = useState(languages.Java.code);
-
+  const [selectedLanguage, setSelectedLanguage] = useState("Python");
+  const [code, setCode] = useState(languages.Python.code);
   const [output, setOutput] = useState(
-    "Ready to execute code..."
+    'Welcome to PolyglotMesh. Press "Run Code" to execute your program.'
   );
-
   const [isRunning, setIsRunning] = useState(false);
+  const [executionTime, setExecutionTime] = useState("--");
 
   const currentLanguage = languages[selectedLanguage];
 
   const handleLanguageChange = (language) => {
     setSelectedLanguage(language);
     setCode(languages[language].code);
-    setOutput("Ready to execute code...");
+    setOutput(
+      `Ready to execute ${language} code...`
+    );
+    setExecutionTime("--");
   };
 
   const handleRunCode = async () => {
-
     if (selectedLanguage === "Java") {
       setOutput(
-        "Java execution is not available yet."
+        "Java execution is not available yet.\n\nPython and JavaScript execution are currently supported."
       );
+      setExecutionTime("--");
       return;
     }
 
     setIsRunning(true);
-
     setOutput("Executing...");
+    setExecutionTime("--");
+
+    const startTime = performance.now();
 
     try {
-
       const endpoint =
         selectedLanguage === "Python"
           ? "http://localhost:8080/api/execute/python"
@@ -67,264 +69,390 @@ function PolyglotEditor() {
 
       const response = await fetch(endpoint, {
         method: "POST",
-
         headers: {
           "Content-Type": "text/plain",
         },
-
         body: code,
       });
 
       const result = await response.text();
 
-      if (!response.ok) {
-        setOutput(
-          `Execution failed: ${result}`
-        );
+      const endTime = performance.now();
+      setExecutionTime(`${Math.round(endTime - startTime)} ms`);
 
+      if (!response.ok) {
+        setOutput(`Execution failed:\n${result}`);
         return;
       }
 
-      setOutput(
-        result || "Code executed successfully."
-      );
-
+      setOutput(result || "Code executed successfully.");
     } catch (error) {
-
       setOutput(
-        "Unable to connect to PolyglotMesh backend. Make sure Spring Boot is running on port 8080."
+        "Unable to connect to PolyglotMesh backend.\n\nMake sure Spring Boot is running on port 8080."
       );
-
+      setExecutionTime("--");
     } finally {
-
       setIsRunning(false);
-
     }
   };
 
   return (
-    <div className="polyglot-page">
+    <div className="ide-page">
 
-      <div className="polyglot-container">
+      {/* ================= TOP BAR ================= */}
 
-       
-       
+      <header className="topbar">
 
-        <header className="polyglot-header">
+        <div className="brand">
+          <div className="brand-mark">P</div>
 
-          <div className="brand-section">
-
-            <div className="brand-logo">
-              P
+          <div>
+            <div className="brand-name">
+              PolyglotMesh
             </div>
 
-            <div className="brand-info">
-
-              <h1>
-                PolyglotMesh
-              </h1>
-
-              <p>
-                Multi-Language Runtime Sandbox
-              </p>
-
+            <div className="brand-subtitle">
+              Multi-Language Runtime Sandbox
             </div>
+          </div>
+        </div>
 
+        <div className="topbar-right">
+
+          <div className="runtime-badge">
+            <span className="live-dot"></span>
+            <span>GraalVM Runtime</span>
           </div>
 
-
-          <div className="runtime-status">
-
-            <span className="status-dot"></span>
-
-            <span>
-              GraalVM Runtime
-            </span>
-
-          </div>
-
-        </header>
-
-
-
-        <div className="language-bar">
-
-          {Object.keys(languages).map(
-            (language) => (
-
-              <button
-                key={language}
-
-                className={`language-tab ${
-                  selectedLanguage === language
-                    ? "active"
-                    : ""
-                }`}
-
-                onClick={() =>
-                  handleLanguageChange(language)
-                }
-              >
-
-                <span
-                  className={`language-icon ${language.toLowerCase()}`}
-                >
-                  {languages[language].icon}
-                </span>
-
-                <span>
-                  {language}
-                </span>
-
-              </button>
-
-            )
-          )}
+          <button className="icon-button">
+            ⚙
+          </button>
 
         </div>
+
+      </header>
+
+
+      
+
+      <div className="ide-body">
+
+
+        <aside className="sidebar">
+
+          <div className="sidebar-title">
+            EXPLORER
+          </div>
+
+          <div className="project-name">
+            <span>⌄</span>
+            <span>📁</span>
+            <span>PolyglotMesh</span>
+          </div>
+
+          <div className="file active-file">
+            <span>🐍</span>
+            <span>main.py</span>
+          </div>
+
+          <div className="file">
+            <span>JS</span>
+            <span>script.js</span>
+          </div>
+
+          <div className="file">
+            <span>☕</span>
+            <span>Main.java</span>
+          </div>
+
+
+          <div className="sidebar-section">
+
+            <div className="sidebar-title">
+              RUNTIMES
+            </div>
+
+            <div className="runtime-item">
+              <span className="runtime-icon python">
+                🐍
+              </span>
+
+              <div>
+                <strong>Python</strong>
+                <small>GraalPy</small>
+              </div>
+
+              <span className="runtime-online"></span>
+            </div>
+
+
+            <div className="runtime-item">
+
+              <span className="runtime-icon javascript">
+                JS
+              </span>
+
+              <div>
+                <strong>JavaScript</strong>
+                <small>GraalJS</small>
+              </div>
+
+              <span className="runtime-online"></span>
+
+            </div>
+
+
+            <div className="runtime-item">
+
+              <span className="runtime-icon java">
+                ☕
+              </span>
+
+              <div>
+                <strong>Java</strong>
+                <small>JVM</small>
+              </div>
+
+              <span className="runtime-online"></span>
+
+            </div>
+
+          </div>
+
+
+          <div className="sidebar-bottom">
+
+            <div className="sandbox-status">
+              <span className="shield">🛡</span>
+
+              <div>
+                <strong>Sandbox Active</strong>
+                <small>Host access restricted</small>
+              </div>
+
+            </div>
+
+          </div>
+
+        </aside>
 
 
         
 
-        <div className="workspace">
+        <main className="workspace">
 
 
           
 
-          <div className="editor-pane">
+          <div className="editor-toolbar">
 
-            <div className="pane-header">
+            <div className="language-tabs">
 
-              <span>
-                CODE EDITOR
-              </span>
+              {Object.keys(languages).map((language) => (
 
-              <span className="pane-language">
-                {selectedLanguage}
-              </span>
+                <button
+                  key={language}
+                  className={`language-tab ${
+                    selectedLanguage === language
+                      ? "selected"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    handleLanguageChange(language)
+                  }
+                >
 
-            </div>
+                  <span
+                    className={`tab-icon ${language.toLowerCase()}`}
+                  >
+                    {languages[language].icon}
+                  </span>
 
+                  {language}
 
-            <div className="editor-wrapper">
+                  {selectedLanguage === language && (
+                    <span className="tab-close">
+                      ×
+                    </span>
+                  )}
 
-              <Editor
-                height="100%"
+                </button>
 
-                theme="vs-dark"
-
-                language={
-                  currentLanguage.language
-                }
-
-                value={code}
-
-                onChange={(value) => {
-                  setCode(value || "");
-                }}
-
-                options={{
-
-                  automaticLayout: true,
-
-                  minimap: {
-                    enabled: false,
-                  },
-
-                  fontSize: 14,
-
-                  lineHeight: 22,
-
-                  padding: {
-                    top: 20,
-                    bottom: 20,
-                  },
-
-                  scrollBeyondLastLine: false,
-
-                  wordWrap: "on",
-
-                  renderLineHighlight: "line",
-
-                  cursorBlinking: "smooth",
-
-                  smoothScrolling: true,
-
-                  suggestOnTriggerCharacters: true,
-
-                  tabSize: 4,
-
-                  roundedSelection: false,
-
-                }}
-
-              />
+              ))}
 
             </div>
 
 
-            {/* =========================
-                RUN BAR
-            ========================== */}
+            <div className="toolbar-actions">
 
-            <div className="run-bar">
+              <button className="small-button">
+                ↻
+              </button>
 
               <button
                 className="run-button"
-
                 onClick={handleRunCode}
-
                 disabled={isRunning}
               >
 
-                {isRunning
-                  ? "⏳ Running..."
-                  : "▶ Run Code"}
+                {isRunning ? (
+                  <>
+                    <span className="spinner"></span>
+                    Running...
+                  </>
+                ) : (
+                  <>
+                    ▶
+                    Run Code
+                  </>
+                )}
 
               </button>
-
-
-              <span className="selected-runtime">
-
-                {selectedLanguage}
-
-              </span>
 
             </div>
 
           </div>
 
 
-          
+          {/* EDITOR */}
 
-          <section className="output-section">
+          <section className="editor-section">
 
-            <div className="output-header">
+            <div className="editor-header">
 
-              <div className="output-title">
+              <div className="editor-file">
 
-                <span className="terminal-icon">
-                  &gt;_
+                <span className="file-language-icon">
+                  {currentLanguage.icon}
                 </span>
 
                 <span>
-                  CONSOLE OUTPUT
+                  {selectedLanguage === "Python"
+                    ? "main.py"
+                    : selectedLanguage === "JavaScript"
+                    ? "script.js"
+                    : "Main.java"}
                 </span>
 
               </div>
 
-              <span className="console-status">
-                Sandbox
-              </span>
+
+              <div className="editor-info">
+
+                <span>
+                  {selectedLanguage}
+                </span>
+
+                <span>UTF-8</span>
+
+                <span>Spaces: 4</span>
+
+              </div>
 
             </div>
 
 
-            <div className="output-content">
+            <div className="monaco-container">
 
-              <span className="output-line"></span>
+              <Editor
+                height="100%"
+                theme="vs-dark"
+                language={currentLanguage.language}
+                value={code}
+                onChange={(value) =>
+                  setCode(value || "")
+                }
+                options={{
+                  automaticLayout: true,
+                  minimap: {
+                    enabled: true,
+                  },
+                  fontSize: 14,
+                  lineHeight: 23,
+                  padding: {
+                    top: 20,
+                    bottom: 20,
+                  },
+                  scrollBeyondLastLine: false,
+                  wordWrap: "on",
+                  renderLineHighlight: "all",
+                  cursorBlinking: "smooth",
+                  smoothScrolling: true,
+                  tabSize: 4,
+                  roundedSelection: false,
+                  bracketPairColorization: {
+                    enabled: true,
+                  },
+                  suggestOnTriggerCharacters: true,
+                }}
+              />
 
-              <pre className="output-text">
+            </div>
+
+          </section>
+
+
+          {/* CONSOLE */}
+
+          <section className="console">
+
+            <div className="console-header">
+
+              <div className="console-tabs">
+
+                <span className="console-tab active">
+                  TERMINAL
+                </span>
+
+                <span className="console-tab">
+                  OUTPUT
+                </span>
+
+                <span className="console-tab">
+                  PROBLEMS
+                </span>
+
+              </div>
+
+
+              <div className="console-meta">
+
+                <span>
+                  Execution: {executionTime}
+                </span>
+
+                <button
+                  className="clear-button"
+                  onClick={() =>
+                    setOutput("Console cleared.")
+                  }
+                >
+                  Clear
+                </button>
+
+              </div>
+
+            </div>
+
+
+            <div className="console-body">
+
+              <div className="console-prompt">
+                <span className="prompt-symbol">
+                  ❯
+                </span>
+
+                <span className="prompt-text">
+                  PolyglotMesh
+                </span>
+
+                <span className="prompt-path">
+                  ~/sandbox
+                </span>
+              </div>
+
+
+              <pre className="console-output">
                 {output}
               </pre>
 
@@ -332,26 +460,46 @@ function PolyglotEditor() {
 
           </section>
 
-        </div>
 
 
-        
+          <footer className="statusbar">
 
-        <footer className="polyglot-footer">
+            <div className="status-left">
 
-          <span className="footer-brand">
-            PolyglotMesh
-          </span>
+              <span>
+                ⬢ {selectedLanguage}
+              </span>
 
-          <span className="footer-runtime">
-            Java 21 • GraalVM
-          </span>
+              <span>
+                main
+              </span>
 
-          <span className="footer-links">
-            Write&nbsp; • &nbsp;Run&nbsp; • &nbsp;Explore&nbsp; • &nbsp;Learn
-          </span>
+              <span>
+                ✓ No Problems
+              </span>
 
-        </footer>
+            </div>
+
+
+            <div className="status-right">
+
+              <span>
+                Sandbox: <strong>ACTIVE</strong>
+              </span>
+
+              <span>
+                Java 21
+              </span>
+
+              <span>
+                GraalVM
+              </span>
+
+            </div>
+
+          </footer>
+
+        </main>
 
       </div>
 
