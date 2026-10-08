@@ -27,7 +27,7 @@ public class ExecutionController {
     @PostMapping("/mock-rest")
     public String mockRestCall(@RequestBody String code) {
 
-        // Simulate a traditional REST API call
+       
         try {
             Thread.sleep(50);
         } catch (InterruptedException e) {
