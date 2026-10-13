@@ -36,7 +36,6 @@ function PolyglotEditor() {
     const [isRunning, setIsRunning] = useState(false);
     const [executionTime, setExecutionTime] = useState("--");
 
-    // Performance metrics
     const [polyglotTime, setPolyglotTime] = useState("--");
     const [mockRestTime, setMockRestTime] = useState("--");
     const [performanceDifference, setPerformanceDifference] =
@@ -51,8 +50,28 @@ function PolyglotEditor() {
         Java: `${API_BASE}/java`,
     };
 
-    // Change language
+    // Detect error messages returned by the current backend as text.
+    const isExecutionError = (result) => {
+        const errorPatterns = [
+            /execution timed out/i,
+            /execution error/i,
+            /python execution error/i,
+            /javascript execution error/i,
+            /execution interrupted/i,
+            /execution cancelled/i,
+            /compilation failed/i,
+            /java execution error/i,
+            /requires an isolated process/i,
+            /error:/i,
+        ];
+
+        return errorPatterns.some((pattern) => pattern.test(result || ""));
+    };
+
+    // Change language and reset displayed results.
     const handleLanguageChange = (language) => {
+        if (isRunning || comparisonRunning) return;
+
         setSelectedLanguage(language);
         setCode(languages[language].code);
         setOutput(`Ready to execute ${language} code...`);
@@ -62,8 +81,13 @@ function PolyglotEditor() {
         setPerformanceDifference("--");
     };
 
-    // Run code in the selected language
+    // Run code in the selected language.
     const handleRunCode = async () => {
+        if (!code.trim()) {
+            setOutput("Please enter some code before running.");
+            return;
+        }
+
         setIsRunning(true);
         setOutput("Executing...");
         setExecutionTime("--");
@@ -80,35 +104,43 @@ function PolyglotEditor() {
             });
 
             const result = await response.text();
+            const elapsed = performance.now() - startTime;
 
-            setExecutionTime(
-                `${(performance.now() - startTime).toFixed(2)} ms`
-            );
+            setExecutionTime(`${elapsed.toFixed(2)} ms`);
 
             if (!response.ok) {
                 setOutput(`Execution failed:\n${result}`);
                 return;
             }
 
+            if (isExecutionError(result)) {
+                setOutput(`Execution failed:\n${result}`);
+                return;
+            }
+
             setOutput(result || "Code executed successfully.");
         } catch (error) {
+            setExecutionTime("--");
             setOutput(
                 "Unable to connect to PolyglotMesh backend.\n\n" +
                 "Make sure Spring Boot is running on port 8080."
             );
-            setExecutionTime("--");
         } finally {
             setIsRunning(false);
         }
     };
 
-    // Week 3 performance comparison
+    // Compare successful execution requests with the mock REST endpoint.
     const runPerformanceComparison = async () => {
         if (selectedLanguage === "Java") {
             setOutput(
-                "Performance comparison is currently available for Python " +
-                "and JavaScript. Java execution is measured using Run Code."
+                "Performance comparison is available for Python and JavaScript."
             );
+            return;
+        }
+
+        if (!code.trim()) {
+            setOutput("Please enter some code before comparing performance.");
             return;
         }
 
@@ -116,9 +148,10 @@ function PolyglotEditor() {
         setPolyglotTime("--");
         setMockRestTime("--");
         setPerformanceDifference("--");
+        setOutput("Running performance comparison...");
 
         try {
-            // Measure the complete browser-to-backend Polyglot request
+            // First measure the browser-to-backend Polyglot request.
             const polyglotStart = performance.now();
 
             const polyglotResponse = await fetch(
@@ -141,7 +174,14 @@ function PolyglotEditor() {
                 );
             }
 
-            // Measure the mock REST request
+            // The backend may return errors with HTTP 200.
+            if (isExecutionError(polyglotResult)) {
+                throw new Error(
+                    `Code execution failed:\n${polyglotResult}`
+                );
+            }
+
+            // Measure mock REST separately.
             const restStart = performance.now();
 
             const restResponse = await fetch(`${API_BASE}/mock-rest`, {
@@ -156,24 +196,36 @@ function PolyglotEditor() {
             const restElapsed = performance.now() - restStart;
 
             if (!restResponse.ok) {
-                throw new Error(`Mock REST request failed: ${restResult}`);
+                throw new Error(
+                    `Mock REST request failed: ${restResult}`
+                );
             }
 
+            // Only display metrics after both requests succeed.
             setPolyglotTime(polyglotElapsed.toFixed(2));
             setMockRestTime(restElapsed.toFixed(2));
+
             setPerformanceDifference(
                 (restElapsed - polyglotElapsed).toFixed(2)
             );
 
             setOutput(
-                `Performance comparison completed.\n\n` +
-                `Polyglot response: ${polyglotResult}\n` +
-                `Mock REST response: ${restResult}`
+                `Performance comparison completed successfully.\n\n` +
+                `Polyglot response: ${polyglotResult || "(no output)"}\n` +
+                `Polyglot request time: ${polyglotElapsed.toFixed(2)} ms\n\n` +
+                `Mock REST response: ${restResult}\n` +
+                `Mock REST request time: ${restElapsed.toFixed(2)} ms\n\n` +
+                `Difference (REST - Polyglot): ` +
+                `${(restElapsed - polyglotElapsed).toFixed(2)} ms`
             );
         } catch (error) {
+            setPolyglotTime("--");
+            setMockRestTime("--");
+            setPerformanceDifference("--");
+
             setOutput(
                 `Performance comparison failed:\n${error.message}\n\n` +
-                "Check that the Spring Boot backend is running on port 8080."
+                "Use code that completes successfully and try again."
             );
         } finally {
             setComparisonRunning(false);
@@ -289,6 +341,7 @@ function PolyglotEditor() {
                                     onClick={() =>
                                         handleLanguageChange(language)
                                     }
+                                    disabled={isRunning || comparisonRunning}
                                 >
                                     <span
                                         className={`tab-icon ${language.toLowerCase()}`}
@@ -310,6 +363,7 @@ function PolyglotEditor() {
                                 onClick={() =>
                                     handleLanguageChange(selectedLanguage)
                                 }
+                                disabled={isRunning || comparisonRunning}
                             >
                                 ↻
                             </button>
@@ -318,7 +372,7 @@ function PolyglotEditor() {
                                 className="run-button"
                                 type="button"
                                 onClick={handleRunCode}
-                                disabled={isRunning}
+                                disabled={isRunning || comparisonRunning}
                             >
                                 {isRunning ? (
                                     <>
@@ -480,9 +534,7 @@ function PolyglotEditor() {
                                 <button
                                     className="clear-button"
                                     type="button"
-                                    onClick={() =>
-                                        setOutput("Console cleared.")
-                                    }
+                                    onClick={() => setOutput("Console cleared.")}
                                 >
                                     Clear
                                 </button>
@@ -504,7 +556,7 @@ function PolyglotEditor() {
                         </div>
                     </section>
 
-                    {/* Status bar */}
+                    
                     <footer className="statusbar">
                         <div className="status-left">
                             <span>⬢ {selectedLanguage}</span>

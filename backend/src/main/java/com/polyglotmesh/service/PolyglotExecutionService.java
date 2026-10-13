@@ -1,161 +1,215 @@
+
 package com.polyglotmesh.service;
 
 import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.HostAccess;
+import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 import org.springframework.stereotype.Service;
 
+import javax.tools.JavaCompiler;
+import javax.tools.JavaFileObject;
+import javax.tools.SimpleJavaFileObject;
+import javax.tools.StandardJavaFileManager;
+import javax.tools.ToolProvider;
 import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 public class PolyglotExecutionService {
 
+    private static final long TIMEOUT_SECONDS = 3;
+
+    private String executePolyglot(String language, String code) {
+        if (code == null || code.isBlank()) {
+            return "Error: Code cannot be empty.";
+        }
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        AtomicReference<Context> contextRef = new AtomicReference<>();
+
+        try {
+            Future<String> future = executor.submit(() -> {
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+                try (Context context = Context.newBuilder(language)
+                        .allowAllAccess(false)
+                        .allowHostAccess(HostAccess.NONE)
+                        .allowHostClassLookup(name -> false)
+                        .allowIO(false)
+                        .option("engine.WarnInterpreterOnly", "false")
+                        .out(output)
+                        .err(output)
+                        .build()) {
+
+                    contextRef.set(context);
+                    Value result = context.eval(language, code);
+
+                    String captured =
+                            output.toString(StandardCharsets.UTF_8);
+
+                    if (!captured.isEmpty()) {
+                        return captured;
+                    }
+
+                    if (result.isString()) {
+                        return result.asString();
+                    }
+
+                    return result.toString();
+                }
+            });
+
+            return future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        } catch (TimeoutException e) {
+            Context context = contextRef.get();
+
+            if (context != null) {
+                try {
+                    context.close(true);
+                } catch (Exception ignored) {
+                    // Context may already be closed.
+                }
+            }
+
+            return "Execution timed out after "
+                    + TIMEOUT_SECONDS + " seconds.";
+
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            String message = cause != null
+                    ? cause.getMessage()
+                    : e.getMessage();
+
+            return "Execution error: " + message;
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Execution interrupted.";
+
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
     public String executePython(String code) {
+        return executePolyglot("python", code);
+    }
 
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
+    public String executeJavaScript(String code) {
+        return executePolyglot("js", code);
+    }
 
-        try (Context context = Context.newBuilder("python")
-                .allowAllAccess(false)
-                .allowHostAccess(org.graalvm.polyglot.HostAccess.NONE)
-                .allowHostClassLookup(className -> false)
-                .option("engine.WarnInterpreterOnly", "false")
-                .allowIO(false)
-                .out(output)
-                .err(output)
-                .build()) {
+    // Local Java runner for development and trusted code only.
+    public String executeJava(String code) {
+        if (code == null || code.isBlank()) {
+            return "Error: Java code cannot be empty.";
+        }
 
-            context.eval("python", code);
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+
+        if (compiler == null) {
+            return "Java execution error: JDK compiler not available. "
+                    + "Run the backend with a full JDK.";
+        }
+
+        Path tempDir = null;
+
+        try {
+            tempDir = Files.createTempDirectory("polyglot-java-");
+
+            Path sourceFile = tempDir.resolve("Main.java");
+            Files.writeString(sourceFile, code, StandardCharsets.UTF_8);
+
+            Path outputDir = tempDir.resolve("classes");
+            Files.createDirectories(outputDir);
+
+            ByteArrayOutputStream compilerErrors =
+                    new ByteArrayOutputStream();
+
+            try (StandardJavaFileManager fileManager =
+                         compiler.getStandardFileManager(
+                                 null, null, StandardCharsets.UTF_8)) {
+
+                Iterable<? extends JavaFileObject> units =
+                        fileManager.getJavaFileObjects(sourceFile.toFile());
+
+                boolean compiled = compiler.getTask(
+                        null,
+                        fileManager,
+                        null,
+                        List.of("-d", outputDir.toString()),
+                        null,
+                        units
+                ).call();
+
+                if (!compiled) {
+                    return "Java compilation failed:\n"
+                            + compilerErrors.toString(StandardCharsets.UTF_8);
+                }
+            }
+
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            PrintStream originalOut = System.out;
+
+            try (URLClassLoader loader = new URLClassLoader(
+                    new URL[]{outputDir.toUri().toURL()},
+                    ClassLoader.getPlatformClassLoader())) {
+
+                Class<?> mainClass = loader.loadClass("Main");
+                var mainMethod =
+                        mainClass.getMethod("main", String[].class);
+
+                try (PrintStream captured = new PrintStream(
+                        output, true, StandardCharsets.UTF_8)) {
+                    System.setOut(captured);
+
+                    try {
+                        mainMethod.invoke(null, (Object) new String[0]);
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        Throwable cause = e.getCause();
+                        return "Java runtime error: "
+                                + (cause == null
+                                ? e.getMessage()
+                                : cause.getMessage());
+                    } finally {
+                        System.setOut(originalOut);
+                    }
+                }
+            }
 
             return output.toString(StandardCharsets.UTF_8);
 
         } catch (Exception e) {
-            return "Python execution error: " + e.getMessage();
-        }
-    }
-
-    public String executeJavaScript(String code) {
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        try (Context context = Context.newBuilder("js")
-                .allowAllAccess(false)
-                .allowHostAccess(org.graalvm.polyglot.HostAccess.NONE)
-                .allowHostClassLookup(className -> false)
-                .option("engine.WarnInterpreterOnly", "false")
-                .allowIO(false)
-                .out(output)
-                .err(output)
-                .build()) {
-
-            Value result = context.eval("js", code);
-
-            String consoleOutput =
-                    output.toString(StandardCharsets.UTF_8);
-
-            if (!consoleOutput.isEmpty()) {
-                return consoleOutput;
-            }
-
-            if (result.isString()) {
-                return result.asString();
-            }
-
-            return result.toString();
-
-        } catch (Exception e) {
-            return "JavaScript execution error: " + e.getMessage();
-        }
-    }
-    public String executeJava(String code) {
-    try {
-        javax.tools.JavaCompiler compiler =
-                javax.tools.ToolProvider.getSystemJavaCompiler();
-
-        if (compiler == null) {
-            return "Java execution error: JDK compiler not available.";
-        }
-
-        java.io.ByteArrayOutputStream output =
-                new java.io.ByteArrayOutputStream();
-
-        java.io.ByteArrayOutputStream errors =
-                new java.io.ByteArrayOutputStream();
-
-        javax.tools.JavaFileObject source =
-                new javax.tools.SimpleJavaFileObject(
-                        java.net.URI.create("string:///Main.java"),
-                        javax.tools.JavaFileObject.Kind.SOURCE) {
-                    @Override
-                    public CharSequence getCharContent(
-                            boolean ignoreEncodingErrors) {
-                        return code;
-                    }
-                };
-
-        java.nio.file.Path tempDir =
-                java.nio.file.Files.createTempDirectory("polyglot-java-");
-
-        javax.tools.StandardJavaFileManager fileManager =
-                compiler.getStandardFileManager(
-                        null, null, java.nio.charset.StandardCharsets.UTF_8);
-
-        try {
-            java.util.List<String> options = java.util.List.of(
-                    "-d", tempDir.toString()
-            );
-
-            boolean compiled = compiler.getTask(
-                    null, fileManager, null, options, null,
-                    java.util.List.of(source)
-            ).call();
-
-            if (!compiled) {
-                return "Compilation failed. Check your Java code.";
-            }
-
-            try (java.net.URLClassLoader loader =
-                         new java.net.URLClassLoader(
-                                 new java.net.URL[]{
-                                         tempDir.toUri().toURL()
-                                 })) {
-
-                Class<?> mainClass =
-                        loader.loadClass("Main");
-
-                java.lang.reflect.Method main =
-                        mainClass.getMethod("main", String[].class);
-
-                java.io.PrintStream originalOut = System.out;
-
-                try (java.io.PrintStream captured =
-                             new java.io.PrintStream(output)) {
-                    System.setOut(captured);
-
-                    main.invoke(null, (Object) new String[0]);
-                } finally {
-                    System.setOut(originalOut);
-                }
-            }
-
-            return output.toString(
-                    java.nio.charset.StandardCharsets.UTF_8);
+            return "Java execution error: " + e.getMessage();
 
         } finally {
-            fileManager.close();
-
-            try (var paths = java.nio.file.Files.walk(tempDir)) {
-                paths.sorted(java.util.Comparator.reverseOrder())
-                        .forEach(path -> {
-                            try {
-                                java.nio.file.Files.deleteIfExists(path);
-                            } catch (java.io.IOException ignored) {
-                            }
-                        });
+            if (tempDir != null) {
+                try (var paths = Files.walk(tempDir)) {
+                    paths.sorted(Comparator.reverseOrder())
+                            .forEach(path -> {
+                                try {
+                                    Files.deleteIfExists(path);
+                                } catch (IOException ignored) {
+                                    // Best-effort cleanup.
+                                }
+                            });
+                } catch (IOException ignored) {
+                    // Best-effort cleanup.
+                }
             }
         }
-
-    } catch (Exception e) {
-        return "Java execution error: " + e.getMessage();
     }
-}
 }
