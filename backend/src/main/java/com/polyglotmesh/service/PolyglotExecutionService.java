@@ -5,17 +5,16 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
+import org.graalvm.polyglot.io.IOAccess;
 import org.springframework.stereotype.Service;
 
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.io.IOException;
-import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
@@ -47,7 +46,10 @@ public class PolyglotExecutionService {
                         .allowAllAccess(false)
                         .allowHostAccess(HostAccess.NONE)
                         .allowHostClassLookup(name -> false)
-                        .allowIO(false)
+                        .allowIO(IOAccess.NONE)
+                        .allowCreateProcess(false)
+                        .allowCreateThread(false)
+                        .allowNativeAccess(false)
                         .option("engine.WarnInterpreterOnly", "false")
                         .out(output)
                         .err(output)
@@ -89,6 +91,12 @@ public class PolyglotExecutionService {
 
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
+
+            if (cause instanceof PolyglotException pe
+                    && pe.isCancelled()) {
+                return "Execution cancelled.";
+            }
+
             String message = cause != null
                     ? cause.getMessage()
                     : e.getMessage();
@@ -98,6 +106,9 @@ public class PolyglotExecutionService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Execution interrupted.";
+
+        } catch (Exception e) {
+            return "Execution error: " + e.getMessage();
 
         } finally {
             executor.shutdownNow();
@@ -112,7 +123,8 @@ public class PolyglotExecutionService {
         return executePolyglot("js", code);
     }
 
-    // Local Java runner for development and trusted code only.
+    // Development runner for trusted Java code only.
+    // This is not a secure sandbox for untrusted code.
     public String executeJava(String code) {
         if (code == null || code.isBlank()) {
             return "Error: Java code cannot be empty.";
@@ -126,6 +138,7 @@ public class PolyglotExecutionService {
         }
 
         Path tempDir = null;
+        PrintStream originalOut = System.out;
 
         try {
             tempDir = Files.createTempDirectory("polyglot-java-");
@@ -136,33 +149,37 @@ public class PolyglotExecutionService {
             Path outputDir = tempDir.resolve("classes");
             Files.createDirectories(outputDir);
 
-            ByteArrayOutputStream compilerErrors =
+            ByteArrayOutputStream compilerOutput =
                     new ByteArrayOutputStream();
 
-            try (StandardJavaFileManager fileManager =
-                         compiler.getStandardFileManager(
-                                 null, null, StandardCharsets.UTF_8)) {
+            
+boolean compiled;
 
-                Iterable<? extends JavaFileObject> units =
-                        fileManager.getJavaFileObjects(sourceFile.toFile());
+try (StandardJavaFileManager fileManager =
+        compiler.getStandardFileManager(
+                null, null, StandardCharsets.UTF_8)) {
 
-                boolean compiled = compiler.getTask(
-                        null,
-                        fileManager,
-                        null,
-                        List.of("-d", outputDir.toString()),
-                        null,
-                        units
-                ).call();
+    Iterable<? extends JavaFileObject> units =
+            fileManager.getJavaFileObjects(sourceFile.toFile());
 
-                if (!compiled) {
-                    return "Java compilation failed:\n"
-                            + compilerErrors.toString(StandardCharsets.UTF_8);
-                }
+    compiled = compiler.run(
+            null,
+            null,
+            compilerOutput,
+            "-d",
+            outputDir.toString(),
+            sourceFile.toString()
+    ) == 0;
+}
+
+            
+
+            if (!compiled) {
+                return "Java compilation failed:\n"
+                        + compilerOutput.toString(StandardCharsets.UTF_8);
             }
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
-            PrintStream originalOut = System.out;
 
             try (URLClassLoader loader = new URLClassLoader(
                     new URL[]{outputDir.toUri().toURL()},
@@ -174,16 +191,20 @@ public class PolyglotExecutionService {
 
                 try (PrintStream captured = new PrintStream(
                         output, true, StandardCharsets.UTF_8)) {
+
                     System.setOut(captured);
 
                     try {
                         mainMethod.invoke(null, (Object) new String[0]);
+
                     } catch (java.lang.reflect.InvocationTargetException e) {
                         Throwable cause = e.getCause();
+
                         return "Java runtime error: "
                                 + (cause == null
                                 ? e.getMessage()
                                 : cause.getMessage());
+
                     } finally {
                         System.setOut(originalOut);
                     }
@@ -196,6 +217,8 @@ public class PolyglotExecutionService {
             return "Java execution error: " + e.getMessage();
 
         } finally {
+            System.setOut(originalOut);
+
             if (tempDir != null) {
                 try (var paths = Files.walk(tempDir)) {
                     paths.sorted(Comparator.reverseOrder())
