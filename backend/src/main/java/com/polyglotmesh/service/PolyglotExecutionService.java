@@ -8,20 +8,12 @@ import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.IOAccess;
 import org.springframework.stereotype.Service;
 
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
 import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
 import java.io.IOException;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
-import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -65,11 +57,9 @@ public class PolyglotExecutionService {
                         return captured;
                     }
 
-                    if (result.isString()) {
-                        return result.asString();
-                    }
-
-                    return result.toString();
+                    return result.isString()
+                            ? result.asString()
+                            : result.toString();
                 }
             });
 
@@ -82,7 +72,6 @@ public class PolyglotExecutionService {
                 try {
                     context.close(true);
                 } catch (Exception ignored) {
-                    // Context may already be closed.
                 }
             }
 
@@ -91,15 +80,9 @@ public class PolyglotExecutionService {
 
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
-
-            if (cause instanceof PolyglotException pe
-                    && pe.isCancelled()) {
-                return "Execution cancelled.";
-            }
-
-            String message = cause != null
-                    ? cause.getMessage()
-                    : e.getMessage();
+            String message = cause == null
+                    ? e.getMessage()
+                    : cause.getMessage();
 
             return "Execution error: " + message;
 
@@ -123,102 +106,99 @@ public class PolyglotExecutionService {
         return executePolyglot("js", code);
     }
 
-    // Development runner for trusted Java code only.
-    // This is not a secure sandbox for untrusted code.
+    
     public String executeJava(String code) {
         if (code == null || code.isBlank()) {
             return "Error: Java code cannot be empty.";
         }
 
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        String javaHome = System.getenv("JAVA_HOME");
 
-        if (compiler == null) {
-            return "Java execution error: JDK compiler not available. "
-                    + "Run the backend with a full JDK.";
+        if (javaHome == null || javaHome.isBlank()) {
+            return "Error: JAVA_HOME is not configured.";
+        }
+
+        boolean windows = System.getProperty("os.name")
+                .toLowerCase().contains("win");
+
+        String extension = windows ? ".exe" : "";
+
+        Path javac = Path.of(javaHome, "bin", "javac" + extension);
+        Path java = Path.of(javaHome, "bin", "java" + extension);
+
+        if (!Files.exists(javac) || !Files.exists(java)) {
+            return "Error: javac/java not found in JAVA_HOME.";
         }
 
         Path tempDir = null;
-        PrintStream originalOut = System.out;
 
         try {
             tempDir = Files.createTempDirectory("polyglot-java-");
 
-            Path sourceFile = tempDir.resolve("Main.java");
-            Files.writeString(sourceFile, code, StandardCharsets.UTF_8);
+            Path source = tempDir.resolve("Main.java");
+            Path outputFile = tempDir.resolve("output.txt");
 
-            Path outputDir = tempDir.resolve("classes");
-            Files.createDirectories(outputDir);
-
-            ByteArrayOutputStream compilerOutput =
-                    new ByteArrayOutputStream();
+            Files.writeString(source, code, StandardCharsets.UTF_8);
 
             
-boolean compiled;
+            Process compile = new ProcessBuilder(
+                    javac.toString(),
+                    "-proc:none",
+                    "-d", tempDir.toString(),
+                    source.toString()
+            )
+                    .directory(tempDir.toFile())
+                    .redirectErrorStream(true)
+                    .redirectOutput(outputFile.toFile())
+                    .start();
 
-try (StandardJavaFileManager fileManager =
-        compiler.getStandardFileManager(
-                null, null, StandardCharsets.UTF_8)) {
-
-    Iterable<? extends JavaFileObject> units =
-            fileManager.getJavaFileObjects(sourceFile.toFile());
-
-    compiled = compiler.run(
-            null,
-            null,
-            compilerOutput,
-            "-d",
-            outputDir.toString(),
-            sourceFile.toString()
-    ) == 0;
-}
-
-            
-
-            if (!compiled) {
-                return "Java compilation failed:\n"
-                        + compilerOutput.toString(StandardCharsets.UTF_8);
+            if (!compile.waitFor(10, TimeUnit.SECONDS)) {
+                compile.destroyForcibly();
+                return "Error: Java compilation timed out.";
             }
 
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            String compileOutput =
+                    Files.readString(outputFile, StandardCharsets.UTF_8);
 
-            try (URLClassLoader loader = new URLClassLoader(
-                    new URL[]{outputDir.toUri().toURL()},
-                    ClassLoader.getPlatformClassLoader())) {
-
-                Class<?> mainClass = loader.loadClass("Main");
-                var mainMethod =
-                        mainClass.getMethod("main", String[].class);
-
-                try (PrintStream captured = new PrintStream(
-                        output, true, StandardCharsets.UTF_8)) {
-
-                    System.setOut(captured);
-
-                    try {
-                        mainMethod.invoke(null, (Object) new String[0]);
-
-                    } catch (java.lang.reflect.InvocationTargetException e) {
-                        Throwable cause = e.getCause();
-
-                        return "Java runtime error: "
-                                + (cause == null
-                                ? e.getMessage()
-                                : cause.getMessage());
-
-                    } finally {
-                        System.setOut(originalOut);
-                    }
-                }
+            if (compile.exitValue() != 0) {
+                return "Java compilation failed:\n" + compileOutput;
             }
 
-            return output.toString(StandardCharsets.UTF_8);
+            // Run compiled Java class.
+            Process run = new ProcessBuilder(
+                    java.toString(),
+                    "-cp", tempDir.toString(),
+                    "Main"
+            )
+                    .directory(tempDir.toFile())
+                    .redirectErrorStream(true)
+                    .redirectOutput(outputFile.toFile())
+                    .start();
+
+            if (!run.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                run.destroyForcibly();
+                return "Error: Java execution timed out.";
+            }
+
+            String output =
+                    Files.readString(outputFile, StandardCharsets.UTF_8);
+
+            if (run.exitValue() != 0) {
+                return "Java runtime error:\n" + output;
+            }
+
+            return output.isBlank()
+                    ? "Program executed successfully."
+                    : output;
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Java execution interrupted.";
 
         } catch (Exception e) {
             return "Java execution error: " + e.getMessage();
 
         } finally {
-            System.setOut(originalOut);
-
             if (tempDir != null) {
                 try (var paths = Files.walk(tempDir)) {
                     paths.sorted(Comparator.reverseOrder())
@@ -226,11 +206,9 @@ try (StandardJavaFileManager fileManager =
                                 try {
                                     Files.deleteIfExists(path);
                                 } catch (IOException ignored) {
-                                    // Best-effort cleanup.
                                 }
                             });
                 } catch (IOException ignored) {
-                    // Best-effort cleanup.
                 }
             }
         }
