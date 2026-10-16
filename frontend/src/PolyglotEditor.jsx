@@ -6,12 +6,12 @@ const languages = {
     Python: {
         language: "python",
         icon: "🐍",
-        code: `print("Hello from PolyglotMesh")`,
+        code: 'print("Hello from PolyglotMesh")',
     },
     JavaScript: {
         language: "javascript",
         icon: "JS",
-        code: `console.log("Hello from JavaScript");`,
+        code: 'console.log("Hello from JavaScript");',
     },
     Java: {
         language: "java",
@@ -25,6 +25,7 @@ const languages = {
 };
 
 const API_BASE = "http://localhost:8080/api/execute";
+const SCRIPTS_API = "http://localhost:8080/api/scripts";
 
 function PolyglotEditor() {
     const [selectedLanguage, setSelectedLanguage] = useState("Python");
@@ -41,31 +42,18 @@ function PolyglotEditor() {
         useState("--");
     const [comparisonRunning, setComparisonRunning] = useState(false);
 
+    const [scriptName, setScriptName] = useState("My Script");
+    const [savedScripts, setSavedScripts] = useState([]);
+    const [selectedScriptId, setSelectedScriptId] = useState("");
+    const [isSavingScript, setIsSavingScript] = useState(false);
+    const [isLoadingScripts, setIsLoadingScripts] = useState(false);
+
     const currentLanguage = languages[selectedLanguage];
 
     const endpoints = {
         Python: `${API_BASE}/python`,
         JavaScript: `${API_BASE}/javascript`,
         Java: `${API_BASE}/java`,
-    };
-
-    const isExecutionError = (result) => {
-        const errorPatterns = [
-            /execution timed out/i,
-            /execution error/i,
-            /python execution error/i,
-            /javascript execution error/i,
-            /execution interrupted/i,
-            /execution cancelled/i,
-            /compilation failed/i,
-            /java execution error/i,
-            /requires an isolated process/i,
-            /^error:/i,
-        ];
-
-        return errorPatterns.some((pattern) =>
-            pattern.test(result || "")
-        );
     };
 
     const resetMetrics = () => {
@@ -84,7 +72,6 @@ function PolyglotEditor() {
         resetMetrics();
     };
 
-    // Execute code in Python, JavaScript, or Java.
     const handleRunCode = async () => {
         if (!code.trim()) {
             setOutput("Please enter some code before running.");
@@ -93,8 +80,6 @@ function PolyglotEditor() {
 
         setIsRunning(true);
         setOutput("Executing...");
-        setExecutionTime("--");
-
         const startTime = performance.now();
 
         try {
@@ -108,37 +93,134 @@ function PolyglotEditor() {
             });
 
             const result = await response.text();
-            const elapsed = performance.now() - startTime;
 
-            setExecutionTime(`${elapsed.toFixed(2)} ms`);
+            setExecutionTime(
+                `${(performance.now() - startTime).toFixed(2)} ms`
+            );
 
             if (!response.ok) {
                 setOutput(`Execution failed:\n${result}`);
-                return;
+            } else {
+                setOutput(result || "Code executed successfully.");
             }
-
-            if (isExecutionError(result)) {
-                setOutput(`Execution failed:\n${result}`);
-                return;
-            }
-
-            setOutput(result || "Code executed successfully.");
         } catch (error) {
-            setExecutionTime("--");
             setOutput(
-                "Unable to connect to PolyglotMesh backend.\n\n" +
-                "Make sure the backend is running on port 8080.\n" +
-                `Details: ${error.message}`
+                `Unable to connect to the backend.\n${error.message}`
             );
         } finally {
             setIsRunning(false);
         }
     };
 
-    // Compare Polyglot execution against the mock REST endpoint.
+    const handleSaveScript = async () => {
+        if (!scriptName.trim()) {
+            setOutput("Please enter a script name.");
+            return;
+        }
+
+        setIsSavingScript(true);
+
+        try {
+            const response = await fetch(SCRIPTS_API, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                },
+                body: JSON.stringify({
+                    name: scriptName.trim(),
+                    language: currentLanguage.language,
+                    code,
+                }),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.message || result.error || `HTTP ${response.status}`
+                );
+            }
+
+            setSavedScripts((previous) => [
+                result,
+                ...previous.filter((item) => item.id !== result.id),
+            ]);
+            setSelectedScriptId(result.id);
+            setOutput(`Script saved successfully: ${result.name}`);
+        } catch (error) {
+            setOutput(`Unable to save script:\n${error.message}`);
+        } finally {
+            setIsSavingScript(false);
+        }
+    };
+
+    const handleLoadScripts = async () => {
+        setIsLoadingScripts(true);
+
+        try {
+            const response = await fetch(SCRIPTS_API);
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.message || result.error || `HTTP ${response.status}`
+                );
+            }
+
+            setSavedScripts(result);
+
+            if (result.length === 0) {
+                setSelectedScriptId("");
+                setOutput("No saved scripts found.");
+            } else {
+                setOutput(`Loaded ${result.length} saved script(s).`);
+            }
+        } catch (error) {
+            setOutput(`Unable to load scripts:\n${error.message}`);
+        } finally {
+            setIsLoadingScripts(false);
+        }
+    };
+
+    const handleSelectSavedScript = async (id) => {
+        setSelectedScriptId(id);
+        if (!id) return;
+
+        try {
+            const response = await fetch(
+                `${SCRIPTS_API}/${encodeURIComponent(id)}`
+            );
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.message || result.error || `HTTP ${response.status}`
+                );
+            }
+
+            const languageEntry = Object.entries(languages).find(
+                ([, item]) => item.language === result.language
+            );
+
+            if (!languageEntry) {
+                throw new Error(`Unsupported language: ${result.language}`);
+            }
+
+            setSelectedLanguage(languageEntry[0]);
+            setCode(result.code || "");
+            setScriptName(result.name || "My Script");
+            setOutput(`Loaded script: ${result.name}`);
+            setExecutionTime("--");
+            resetMetrics();
+        } catch (error) {
+            setOutput(`Unable to open script:\n${error.message}`);
+        }
+    };
+
     const runPerformanceComparison = async () => {
         if (!code.trim()) {
-            setOutput("Please enter some code before comparing performance.");
+            setOutput("Please enter some code first.");
             return;
         }
 
@@ -147,81 +229,52 @@ function PolyglotEditor() {
         setOutput("Running performance comparison...");
 
         try {
-            // Measure the language execution request.
-            const polyglotStart = performance.now();
+            const start1 = performance.now();
 
-            const polyglotResponse = await fetch(
-                endpoints[selectedLanguage],
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Accept: "text/plain",
-                    },
-                    body: JSON.stringify({ code }),
-                }
-            );
-
-            const polyglotResult = await polyglotResponse.text();
-            const polyglotElapsed = performance.now() - polyglotStart;
-
-            if (!polyglotResponse.ok) {
-                throw new Error(
-                    `Polyglot request failed (${polyglotResponse.status}): ` +
-                    polyglotResult
-                );
-            }
-
-            if (isExecutionError(polyglotResult)) {
-                throw new Error(
-                    `Code execution failed:\n${polyglotResult}`
-                );
-            }
-
-            // Measure the mock REST request separately.
-            const restStart = performance.now();
-
-            const restResponse = await fetch(`${API_BASE}/mock-rest`, {
+            const response1 = await fetch(endpoints[selectedLanguage], {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Accept: "text/plain",
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ code }),
             });
 
-            const restResult = await restResponse.text();
-            const restElapsed = performance.now() - restStart;
+            const result1 = await response1.text();
+            const time1 = performance.now() - start1;
 
-            if (!restResponse.ok) {
-                throw new Error(
-                    `Mock REST request failed (${restResponse.status}): ` +
-                    restResult
-                );
+            if (!response1.ok) {
+                throw new Error(result1);
             }
 
-            const difference = restElapsed - polyglotElapsed;
+            const start2 = performance.now();
 
-            setPolyglotTime(polyglotElapsed.toFixed(2));
-            setMockRestTime(restElapsed.toFixed(2));
-            setPerformanceDifference(difference.toFixed(2));
+            const response2 = await fetch(`${API_BASE}/mock-rest`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code }),
+            });
+
+            const result2 = await response2.text();
+            const time2 = performance.now() - start2;
+
+            if (!response2.ok) {
+                throw new Error(result2);
+            }
+
+            setPolyglotTime(time1.toFixed(2));
+            setMockRestTime(time2.toFixed(2));
+            setPerformanceDifference((time2 - time1).toFixed(2));
 
             setOutput(
-                "Performance comparison completed successfully.\n\n" +
+                `Performance comparison completed.\n\n` +
                 `Language: ${selectedLanguage}\n` +
-                `Polyglot response: ${polyglotResult || "(no output)"}\n` +
-                `Polyglot request time: ${polyglotElapsed.toFixed(2)} ms\n\n` +
-                `Mock REST response: ${restResult}\n` +
-                `Mock REST request time: ${restElapsed.toFixed(2)} ms\n\n` +
-                `Difference (REST - Polyglot): ${difference.toFixed(2)} ms`
+                `Polyglot response: ${result1}\n` +
+                `Polyglot request time: ${time1.toFixed(2)} ms\n\n` +
+                `Mock REST response: ${result2}\n` +
+                `Mock REST request time: ${time2.toFixed(2)} ms\n\n` +
+                `Difference: ${(time2 - time1).toFixed(2)} ms`
             );
         } catch (error) {
             resetMetrics();
-
-            setOutput(
-                `Performance comparison failed:\n${error.message}\n\n` +
-                "Check that the backend is running and try again."
-            );
+            setOutput(`Performance comparison failed:\n${error.message}`);
         } finally {
             setComparisonRunning(false);
         }
@@ -245,9 +298,6 @@ function PolyglotEditor() {
                         <span className="live-dot"></span>
                         <span>GraalVM Runtime</span>
                     </div>
-                    <button className="icon-button" type="button">
-                        ⚙
-                    </button>
                 </div>
             </header>
 
@@ -341,24 +391,55 @@ function PolyglotEditor() {
                                         {languages[language].icon}
                                     </span>
                                     {language}
-                                    {selectedLanguage === language && (
-                                        <span className="tab-close">×</span>
-                                    )}
                                 </button>
                             ))}
                         </div>
 
                         <div className="toolbar-actions">
+                            <input
+                                className="small-button"
+                                type="text"
+                                value={scriptName}
+                                onChange={(event) =>
+                                    setScriptName(event.target.value)
+                                }
+                                placeholder="Script name"
+                                aria-label="Script name"
+                            />
+
                             <button
                                 className="small-button"
                                 type="button"
-                                onClick={() =>
-                                    handleLanguageChange(selectedLanguage)
-                                }
-                                disabled={isRunning || comparisonRunning}
+                                onClick={handleSaveScript}
+                                disabled={isSavingScript}
                             >
-                                ↻
+                                {isSavingScript ? "Saving..." : "Save Script"}
                             </button>
+
+                            <button
+                                className="small-button"
+                                type="button"
+                                onClick={handleLoadScripts}
+                                disabled={isLoadingScripts}
+                            >
+                                {isLoadingScripts ? "Loading..." : "Load Scripts"}
+                            </button>
+
+                            <select
+                                className="small-button"
+                                value={selectedScriptId}
+                                onChange={(event) =>
+                                    handleSelectSavedScript(event.target.value)
+                                }
+                                aria-label="Saved scripts"
+                            >
+                                <option value="">Choose saved script</option>
+                                {savedScripts.map((script) => (
+                                    <option key={script.id} value={script.id}>
+                                        {script.name} ({script.language})
+                                    </option>
+                                ))}
+                            </select>
 
                             <button
                                 className="run-button"
@@ -366,14 +447,7 @@ function PolyglotEditor() {
                                 onClick={handleRunCode}
                                 disabled={isRunning || comparisonRunning}
                             >
-                                {isRunning ? (
-                                    <>
-                                        <span className="spinner"></span>
-                                        Running...
-                                    </>
-                                ) : (
-                                    <>▶ Run Code</>
-                                )}
+                                {isRunning ? "Running..." : "▶ Run Code"}
                             </button>
                         </div>
                     </div>
@@ -419,11 +493,9 @@ function PolyglotEditor() {
                                     cursorBlinking: "smooth",
                                     smoothScrolling: true,
                                     tabSize: 4,
-                                    roundedSelection: false,
                                     bracketPairColorization: {
                                         enabled: true,
                                     },
-                                    suggestOnTriggerCharacters: true,
                                 }}
                             />
                         </div>
@@ -433,9 +505,7 @@ function PolyglotEditor() {
                         <div className="performance-header">
                             <div>
                                 <h2>Performance Metrics</h2>
-                                <p>
-                                    Polyglot Engine vs Traditional REST
-                                </p>
+                                <p>Polyglot Engine vs Traditional REST</p>
                             </div>
 
                             <button
@@ -471,16 +541,14 @@ function PolyglotEditor() {
                             <div className="metric-card">
                                 <div className="metric-icon">🌐</div>
                                 <div className="metric-content">
-                                    <span className="metric-label">
-                                        Mock REST
-                                    </span>
+                                    <span className="metric-label">Mock REST</span>
                                     <strong className="metric-value">
                                         {mockRestTime === "--"
                                             ? "-- ms"
                                             : `${mockRestTime} ms`}
                                     </strong>
                                     <span className="metric-description">
-                                        Includes simulated 50 ms delay
+                                        Includes simulated delay
                                     </span>
                                 </div>
                             </div>
@@ -532,9 +600,7 @@ function PolyglotEditor() {
                                 <span className="prompt-text">
                                     PolyglotMesh
                                 </span>
-                                <span className="prompt-path">
-                                    ~/sandbox
-                                </span>
+                                <span className="prompt-path">~/sandbox</span>
                             </div>
 
                             <pre className="console-output">{output}</pre>
