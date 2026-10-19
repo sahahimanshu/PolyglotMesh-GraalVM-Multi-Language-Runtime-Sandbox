@@ -38,8 +38,7 @@ function PolyglotEditor() {
 
     const [polyglotTime, setPolyglotTime] = useState("--");
     const [mockRestTime, setMockRestTime] = useState("--");
-    const [performanceDifference, setPerformanceDifference] =
-        useState("--");
+    const [performanceDifference, setPerformanceDifference] = useState("--");
     const [comparisonRunning, setComparisonRunning] = useState(false);
 
     const [scriptName, setScriptName] = useState("My Script");
@@ -47,6 +46,7 @@ function PolyglotEditor() {
     const [selectedScriptId, setSelectedScriptId] = useState("");
     const [isSavingScript, setIsSavingScript] = useState(false);
     const [isLoadingScripts, setIsLoadingScripts] = useState(false);
+    const [isDeletingScript, setIsDeletingScript] = useState(false);
 
     const currentLanguage = languages[selectedLanguage];
 
@@ -104,9 +104,7 @@ function PolyglotEditor() {
                 setOutput(result || "Code executed successfully.");
             }
         } catch (error) {
-            setOutput(
-                `Unable to connect to the backend.\n${error.message}`
-            );
+            setOutput(`Unable to connect to backend:\n${error.message}`);
         } finally {
             setIsRunning(false);
         }
@@ -215,6 +213,50 @@ function PolyglotEditor() {
             resetMetrics();
         } catch (error) {
             setOutput(`Unable to open script:\n${error.message}`);
+        }
+    };
+
+    const handleDeleteScript = async () => {
+        if (!selectedScriptId) {
+            setOutput("Please select a saved script first.");
+            return;
+        }
+
+        if (!window.confirm("Are you sure you want to delete this script?")) {
+            return;
+        }
+
+        setIsDeletingScript(true);
+
+        try {
+            const response = await fetch(
+                `${SCRIPTS_API}/${encodeURIComponent(selectedScriptId)}`,
+                { method: "DELETE" }
+            );
+
+            const message = await response.text();
+
+            if (!response.ok) {
+                throw new Error(message || `HTTP ${response.status}`);
+            }
+
+            setSavedScripts((previous) =>
+                previous.filter((script) => script.id !== selectedScriptId)
+            );
+            setSelectedScriptId("");
+            setOutput("Script deleted successfully.");
+
+            // Refresh the list from the backend.
+            const refreshResponse = await fetch(SCRIPTS_API);
+
+            if (refreshResponse.ok) {
+                const scripts = await refreshResponse.json();
+                setSavedScripts(scripts);
+            }
+        } catch (error) {
+            setOutput(`Delete failed:\n${error.message}`);
+        } finally {
+            setIsDeletingScript(false);
         }
     };
 
@@ -440,6 +482,15 @@ function PolyglotEditor() {
                                     </option>
                                 ))}
                             </select>
+
+                            <button
+                                className="small-button"
+                                type="button"
+                                onClick={handleDeleteScript}
+                                disabled={!selectedScriptId || isDeletingScript}
+                            >
+                                {isDeletingScript ? "Deleting..." : "Delete Script"}
+                            </button>
 
                             <button
                                 className="run-button"

@@ -1157,4 +1157,13 @@ body {
     .toolbar-actions .run-button {
         margin-left: 0;
     }
+}\.toolbar-actions .small-button {
+    position: relative;
+    z-index: 5;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.toolbar-actions button:disabled {
+    cursor: not-allowed;
 }
