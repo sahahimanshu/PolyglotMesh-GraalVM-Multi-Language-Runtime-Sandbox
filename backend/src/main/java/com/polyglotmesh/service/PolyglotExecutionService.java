@@ -15,26 +15,50 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 public class PolyglotExecutionService {
 
     private static final long TIMEOUT_SECONDS = 3;
 
-    private String executePolyglot(String language, String code) {
+    private String cleanError(String language, Throwable error) {
+        if (error instanceof PolyglotException) {
+            PolyglotException pe = (PolyglotException) error;
+
+            if (pe.isSyntaxError()) {
+                return language + " syntax error:\n" + pe.getMessage();
+            }
+
+            if (pe.isCancelled()) {
+                return language + " execution timed out or was cancelled.";
+            }
+
+            if (pe.isGuestException()) {
+                return language + " runtime error:\n" + pe.getMessage();
+            }
+        }
+
+        String message = error.getMessage();
+        if (message == null || message.isBlank()) {
+            message = error.getClass().getSimpleName();
+        }
+
+        return language + " execution error:\n" + message;
+    }
+
+    private String executePolyglot(String languageId, String languageName,
+                                   String code) {
         if (code == null || code.isBlank()) {
-            return "Error: Code cannot be empty.";
+            return "Input error: Code cannot be empty.";
         }
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
-        AtomicReference<Context> contextRef = new AtomicReference<>();
 
         try {
             Future<String> future = executor.submit(() -> {
                 ByteArrayOutputStream output = new ByteArrayOutputStream();
 
-                try (Context context = Context.newBuilder(language)
+                try (Context context = Context.newBuilder(languageId)
                         .allowAllAccess(false)
                         .allowHostAccess(HostAccess.NONE)
                         .allowHostClassLookup(name -> false)
@@ -47,11 +71,9 @@ public class PolyglotExecutionService {
                         .err(output)
                         .build()) {
 
-                    contextRef.set(context);
-                    Value result = context.eval(language, code);
+                    Value result = context.eval(languageId, code);
 
-                    String captured =
-                            output.toString(StandardCharsets.UTF_8);
+                    String captured = output.toString(StandardCharsets.UTF_8);
 
                     if (!captured.isEmpty()) {
                         return captured;
@@ -60,62 +82,51 @@ public class PolyglotExecutionService {
                     return result.isString()
                             ? result.asString()
                             : result.toString();
+
+                } catch (Throwable error) {
+                    return cleanError(languageName, error);
                 }
             });
 
-            return future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-        } catch (TimeoutException e) {
-            Context context = contextRef.get();
-
-            if (context != null) {
-                try {
-                    context.close(true);
-                } catch (Exception ignored) {
-                }
+            try {
+                return future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                future.cancel(true);
+                return languageName + " execution timed out after "
+                        + TIMEOUT_SECONDS + " seconds.";
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause() != null
+                        ? e.getCause() : e;
+                return cleanError(languageName, cause);
             }
-
-            return "Execution timed out after "
-                    + TIMEOUT_SECONDS + " seconds.";
-
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            String message = cause == null
-                    ? e.getMessage()
-                    : cause.getMessage();
-
-            return "Execution error: " + message;
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return "Execution interrupted.";
-
+            return "Execution interrupted. Please try again.";
         } catch (Exception e) {
-            return "Execution error: " + e.getMessage();
-
+            return cleanError(languageName, e);
         } finally {
             executor.shutdownNow();
         }
     }
 
     public String executePython(String code) {
-        return executePolyglot("python", code);
+        return executePolyglot("python", "Python", code);
     }
 
     public String executeJavaScript(String code) {
-        return executePolyglot("js", code);
+        return executePolyglot("js", "JavaScript", code);
     }
 
-    
     public String executeJava(String code) {
         if (code == null || code.isBlank()) {
-            return "Error: Java code cannot be empty.";
+            return "Input error: Java code cannot be empty.";
         }
 
         String javaHome = System.getenv("JAVA_HOME");
 
         if (javaHome == null || javaHome.isBlank()) {
-            return "Error: JAVA_HOME is not configured.";
+            return "Configuration error: JAVA_HOME is not configured.";
         }
 
         boolean windows = System.getProperty("os.name")
@@ -127,7 +138,7 @@ public class PolyglotExecutionService {
         Path java = Path.of(javaHome, "bin", "java" + extension);
 
         if (!Files.exists(javac) || !Files.exists(java)) {
-            return "Error: javac/java not found in JAVA_HOME.";
+            return "Configuration error: javac/java not found in JAVA_HOME.";
         }
 
         Path tempDir = null;
@@ -140,7 +151,6 @@ public class PolyglotExecutionService {
 
             Files.writeString(source, code, StandardCharsets.UTF_8);
 
-            
             Process compile = new ProcessBuilder(
                     javac.toString(),
                     "-proc:none",
@@ -154,17 +164,17 @@ public class PolyglotExecutionService {
 
             if (!compile.waitFor(10, TimeUnit.SECONDS)) {
                 compile.destroyForcibly();
-                return "Error: Java compilation timed out.";
+                compile.waitFor();
+                return "Java compilation timed out after 10 seconds.";
             }
 
             String compileOutput =
                     Files.readString(outputFile, StandardCharsets.UTF_8);
 
             if (compile.exitValue() != 0) {
-                return "Java compilation failed:\n" + compileOutput;
+                return "Java compilation error:\n" + compileOutput;
             }
 
-            // Run compiled Java class.
             Process run = new ProcessBuilder(
                     java.toString(),
                     "-cp", tempDir.toString(),
@@ -177,7 +187,9 @@ public class PolyglotExecutionService {
 
             if (!run.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 run.destroyForcibly();
-                return "Error: Java execution timed out.";
+                run.waitFor();
+                return "Java execution timed out after "
+                        + TIMEOUT_SECONDS + " seconds.";
             }
 
             String output =
@@ -193,11 +205,12 @@ public class PolyglotExecutionService {
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return "Java execution interrupted.";
-
+            return "Java execution interrupted. Please try again.";
         } catch (Exception e) {
-            return "Java execution error: " + e.getMessage();
-
+            String message = e.getMessage();
+            return "Java execution error:\n"
+                    + (message == null
+                    ? e.getClass().getSimpleName() : message);
         } finally {
             if (tempDir != null) {
                 try (var paths = Files.walk(tempDir)) {
