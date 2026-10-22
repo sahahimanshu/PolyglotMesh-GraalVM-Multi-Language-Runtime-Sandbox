@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import Editor from "@monaco-editor/react";
 import "./PolyglotEditor.css";
@@ -48,6 +49,9 @@ function PolyglotEditor() {
     const [isLoadingScripts, setIsLoadingScripts] = useState(false);
     const [isDeletingScript, setIsDeletingScript] = useState(false);
 
+    // Explorer folder state
+    const [explorerOpen, setExplorerOpen] = useState(true);
+
     const currentLanguage = languages[selectedLanguage];
 
     const endpoints = {
@@ -73,13 +77,17 @@ function PolyglotEditor() {
     };
 
     const handleRunCode = async () => {
+        if (isRunning || comparisonRunning) return;
+
         if (!code.trim()) {
             setOutput("Please enter some code before running.");
             return;
         }
 
         setIsRunning(true);
-        setOutput("Executing...");
+        setOutput(`⏳ Executing ${selectedLanguage} code...`);
+        setExecutionTime("--");
+
         const startTime = performance.now();
 
         try {
@@ -246,12 +254,10 @@ function PolyglotEditor() {
             setSelectedScriptId("");
             setOutput("Script deleted successfully.");
 
-            // Refresh the list from the backend.
             const refreshResponse = await fetch(SCRIPTS_API);
 
             if (refreshResponse.ok) {
-                const scripts = await refreshResponse.json();
-                setSavedScripts(scripts);
+                setSavedScripts(await refreshResponse.json());
             }
         } catch (error) {
             setOutput(`Delete failed:\n${error.message}`);
@@ -261,6 +267,8 @@ function PolyglotEditor() {
     };
 
     const runPerformanceComparison = async () => {
+        if (isRunning || comparisonRunning) return;
+
         if (!code.trim()) {
             setOutput("Please enter some code first.");
             return;
@@ -282,9 +290,7 @@ function PolyglotEditor() {
             const result1 = await response1.text();
             const time1 = performance.now() - start1;
 
-            if (!response1.ok) {
-                throw new Error(result1);
-            }
+            if (!response1.ok) throw new Error(result1);
 
             const start2 = performance.now();
 
@@ -297,9 +303,7 @@ function PolyglotEditor() {
             const result2 = await response2.text();
             const time2 = performance.now() - start2;
 
-            if (!response2.ok) {
-                throw new Error(result2);
-            }
+            if (!response2.ok) throw new Error(result2);
 
             setPolyglotTime(time1.toFixed(2));
             setMockRestTime(time2.toFixed(2));
@@ -347,26 +351,66 @@ function PolyglotEditor() {
                 <aside className="sidebar">
                     <div className="sidebar-title">EXPLORER</div>
 
-                    <div className="project-name">
-                        <span>⌄</span>
+                    <button
+                        type="button"
+                        className="project-name explorer-clickable"
+                        onClick={() => setExplorerOpen((open) => !open)}
+                        aria-expanded={explorerOpen}
+                    >
+                        <span className="folder-arrow">
+                            {explorerOpen ? "⌄" : "›"}
+                        </span>
                         <span>📁</span>
                         <span>PolyglotMesh</span>
-                    </div>
+                    </button>
 
-                    <div className="file active-file">
-                        <span>🐍</span>
-                        <span>main.py</span>
-                    </div>
+                    {explorerOpen && (
+                        <div className="explorer-files">
+                            <button
+                                type="button"
+                                className={`file explorer-clickable ${
+                                    selectedLanguage === "Python"
+                                        ? "active-file"
+                                        : ""
+                                }`}
+                                onClick={() => handleLanguageChange("Python")}
+                                disabled={isRunning || comparisonRunning}
+                            >
+                                <span>🐍</span>
+                                <span>main.py</span>
+                            </button>
 
-                    <div className="file">
-                        <span>JS</span>
-                        <span>script.js</span>
-                    </div>
+                            <button
+                                type="button"
+                                className={`file explorer-clickable ${
+                                    selectedLanguage === "JavaScript"
+                                        ? "active-file"
+                                        : ""
+                                }`}
+                                onClick={() =>
+                                    handleLanguageChange("JavaScript")
+                                }
+                                disabled={isRunning || comparisonRunning}
+                            >
+                                <span className="explorer-js-icon">JS</span>
+                                <span>script.js</span>
+                            </button>
 
-                    <div className="file">
-                        <span>☕</span>
-                        <span>Main.java</span>
-                    </div>
+                            <button
+                                type="button"
+                                className={`file explorer-clickable ${
+                                    selectedLanguage === "Java"
+                                        ? "active-file"
+                                        : ""
+                                }`}
+                                onClick={() => handleLanguageChange("Java")}
+                                disabled={isRunning || comparisonRunning}
+                            >
+                                <span>☕</span>
+                                <span>Main.java</span>
+                            </button>
+                        </div>
+                    )}
 
                     <div className="sidebar-section">
                         <div className="sidebar-title">RUNTIMES</div>
@@ -439,7 +483,7 @@ function PolyglotEditor() {
 
                         <div className="toolbar-actions">
                             <input
-                                className="small-button"
+                                className="small-button script-name-input"
                                 type="text"
                                 value={scriptName}
                                 onChange={(event) =>
@@ -453,7 +497,11 @@ function PolyglotEditor() {
                                 className="small-button"
                                 type="button"
                                 onClick={handleSaveScript}
-                                disabled={isSavingScript}
+                                disabled={
+                                    isSavingScript ||
+                                    isRunning ||
+                                    comparisonRunning
+                                }
                             >
                                 {isSavingScript ? "Saving..." : "Save Script"}
                             </button>
@@ -462,18 +510,23 @@ function PolyglotEditor() {
                                 className="small-button"
                                 type="button"
                                 onClick={handleLoadScripts}
-                                disabled={isLoadingScripts}
+                                disabled={
+                                    isLoadingScripts ||
+                                    isRunning ||
+                                    comparisonRunning
+                                }
                             >
                                 {isLoadingScripts ? "Loading..." : "Load Scripts"}
                             </button>
 
                             <select
-                                className="small-button"
+                                className="small-button saved-script-select"
                                 value={selectedScriptId}
                                 onChange={(event) =>
                                     handleSelectSavedScript(event.target.value)
                                 }
                                 aria-label="Saved scripts"
+                                disabled={isRunning || comparisonRunning}
                             >
                                 <option value="">Choose saved script</option>
                                 {savedScripts.map((script) => (
@@ -487,7 +540,12 @@ function PolyglotEditor() {
                                 className="small-button"
                                 type="button"
                                 onClick={handleDeleteScript}
-                                disabled={!selectedScriptId || isDeletingScript}
+                                disabled={
+                                    !selectedScriptId ||
+                                    isDeletingScript ||
+                                    isRunning ||
+                                    comparisonRunning
+                                }
                             >
                                 {isDeletingScript ? "Deleting..." : "Delete Script"}
                             </button>
@@ -497,8 +555,19 @@ function PolyglotEditor() {
                                 type="button"
                                 onClick={handleRunCode}
                                 disabled={isRunning || comparisonRunning}
+                                aria-live="polite"
                             >
-                                {isRunning ? "Running..." : "▶ Run Code"}
+                                {isRunning ? (
+                                    <>
+                                        <span
+                                            className="loading-spinner"
+                                            aria-hidden="true"
+                                        ></span>
+                                        Executing...
+                                    </>
+                                ) : (
+                                    "▶ Run Code"
+                                )}
                             </button>
                         </div>
                     </div>
@@ -648,13 +717,13 @@ function PolyglotEditor() {
                         <div className="console-body">
                             <div className="console-prompt">
                                 <span className="prompt-symbol">❯</span>
-                                <span className="prompt-text">
-                                    PolyglotMesh
-                                </span>
+                                <span className="prompt-text">PolyglotMesh</span>
                                 <span className="prompt-path">~/sandbox</span>
                             </div>
 
-                            <pre className="console-output">{output}</pre>
+                            <pre className="console-output" aria-live="polite">
+                                {output}
+                            </pre>
                         </div>
                     </section>
 
@@ -662,7 +731,13 @@ function PolyglotEditor() {
                         <div className="status-left">
                             <span>⬢ {selectedLanguage}</span>
                             <span>main</span>
-                            <span>✓ Ready</span>
+                            <span>
+                                {isRunning
+                                    ? "⏳ Executing"
+                                    : comparisonRunning
+                                    ? "⏳ Comparing"
+                                    : "✓ Ready"}
+                            </span>
                         </div>
 
                         <div className="status-right">
