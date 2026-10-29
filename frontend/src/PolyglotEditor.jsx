@@ -7,16 +7,19 @@ const languages = {
     Python: {
         language: "python",
         icon: "🐍",
+        filename: "main.py",
         code: 'print("Hello from PolyglotMesh")',
     },
     JavaScript: {
         language: "javascript",
         icon: "JS",
+        filename: "script.js",
         code: 'console.log("Hello from JavaScript");',
     },
     Java: {
         language: "java",
         icon: "☕",
+        filename: "Main.java",
         code: `public class Main {
     public static void main(String[] args) {
         System.out.println("Hello from Java");
@@ -48,8 +51,6 @@ function PolyglotEditor() {
     const [isSavingScript, setIsSavingScript] = useState(false);
     const [isLoadingScripts, setIsLoadingScripts] = useState(false);
     const [isDeletingScript, setIsDeletingScript] = useState(false);
-
-    // Explorer folder state
     const [explorerOpen, setExplorerOpen] = useState(true);
 
     const currentLanguage = languages[selectedLanguage];
@@ -85,7 +86,7 @@ function PolyglotEditor() {
         }
 
         setIsRunning(true);
-        setOutput(`⏳ Executing ${selectedLanguage} code...`);
+        setOutput(`Executing ${selectedLanguage} code...`);
         setExecutionTime("--");
 
         const startTime = performance.now();
@@ -112,13 +113,18 @@ function PolyglotEditor() {
                 setOutput(result || "Code executed successfully.");
             }
         } catch (error) {
-            setOutput(`Unable to connect to backend:\n${error.message}`);
+            setOutput(
+                `Unable to connect to backend:\n${error.message}\n\n` +
+                "Make sure Spring Boot is running on port 8080."
+            );
         } finally {
             setIsRunning(false);
         }
     };
 
     const handleSaveScript = async () => {
+        if (isSavingScript) return;
+
         if (!scriptName.trim()) {
             setOutput("Please enter a script name.");
             return;
@@ -162,6 +168,8 @@ function PolyglotEditor() {
     };
 
     const handleLoadScripts = async () => {
+        if (isLoadingScripts) return;
+
         setIsLoadingScripts(true);
 
         try {
@@ -229,6 +237,8 @@ function PolyglotEditor() {
             setOutput("Please select a saved script first.");
             return;
         }
+
+        if (isDeletingScript) return;
 
         if (!window.confirm("Are you sure you want to delete this script?")) {
             return;
@@ -326,8 +336,13 @@ function PolyglotEditor() {
         }
     };
 
+    const clearConsole = () => setOutput("Console cleared.");
+
     return (
         <div className="ide-page">
+            <div className="ambient ambient-one"></div>
+            <div className="ambient ambient-two"></div>
+
             <header className="topbar">
                 <div className="brand">
                     <div className="brand-mark">P</div>
@@ -342,8 +357,9 @@ function PolyglotEditor() {
                 <div className="topbar-right">
                     <div className="runtime-badge">
                         <span className="live-dot"></span>
-                        <span>GraalVM Runtime</span>
+                        GraalVM Runtime
                     </div>
+                    <span className="version-badge">JAVA 21</span>
                 </div>
             </header>
 
@@ -366,98 +382,72 @@ function PolyglotEditor() {
 
                     {explorerOpen && (
                         <div className="explorer-files">
-                            <button
-                                type="button"
-                                className={`file explorer-clickable ${
-                                    selectedLanguage === "Python"
-                                        ? "active-file"
-                                        : ""
-                                }`}
-                                onClick={() => handleLanguageChange("Python")}
-                                disabled={isRunning || comparisonRunning}
-                            >
-                                <span>🐍</span>
-                                <span>main.py</span>
-                            </button>
-
-                            <button
-                                type="button"
-                                className={`file explorer-clickable ${
-                                    selectedLanguage === "JavaScript"
-                                        ? "active-file"
-                                        : ""
-                                }`}
-                                onClick={() =>
-                                    handleLanguageChange("JavaScript")
-                                }
-                                disabled={isRunning || comparisonRunning}
-                            >
-                                <span className="explorer-js-icon">JS</span>
-                                <span>script.js</span>
-                            </button>
-
-                            <button
-                                type="button"
-                                className={`file explorer-clickable ${
-                                    selectedLanguage === "Java"
-                                        ? "active-file"
-                                        : ""
-                                }`}
-                                onClick={() => handleLanguageChange("Java")}
-                                disabled={isRunning || comparisonRunning}
-                            >
-                                <span>☕</span>
-                                <span>Main.java</span>
-                            </button>
+                            {Object.entries(languages).map(([language, item]) => (
+                                <button
+                                    key={language}
+                                    type="button"
+                                    className={`file explorer-clickable ${
+                                        selectedLanguage === language
+                                            ? "active-file"
+                                            : ""
+                                    }`}
+                                    onClick={() =>
+                                        handleLanguageChange(language)
+                                    }
+                                    disabled={isRunning || comparisonRunning}
+                                >
+                                    <span
+                                        className={`explorer-file-icon ${language.toLowerCase()}`}
+                                    >
+                                        {item.icon}
+                                    </span>
+                                    <span>{item.filename}</span>
+                                </button>
+                            ))}
                         </div>
                     )}
 
                     <div className="sidebar-section">
                         <div className="sidebar-title">RUNTIMES</div>
 
-                        <div className="runtime-item">
-                            <span className="runtime-icon python">🐍</span>
-                            <div>
-                                <strong>Python</strong>
-                                <small>GraalPy</small>
+                        {Object.entries(languages).map(([language, item]) => (
+                            <div className="runtime-item" key={language}>
+                                <span
+                                    className={`runtime-icon ${language.toLowerCase()}`}
+                                >
+                                    {item.icon}
+                                </span>
+                                <div className="runtime-copy">
+                                    <strong>{language}</strong>
+                                    <small>
+                                        {language === "Python"
+                                            ? "GraalPy"
+                                            : language === "JavaScript"
+                                            ? "GraalJS"
+                                            : "JDK compiler"}
+                                    </small>
+                                </div>
+                                <span className="runtime-online"></span>
                             </div>
-                            <span className="runtime-online"></span>
-                        </div>
-
-                        <div className="runtime-item">
-                            <span className="runtime-icon javascript">JS</span>
-                            <div>
-                                <strong>JavaScript</strong>
-                                <small>GraalJS</small>
-                            </div>
-                            <span className="runtime-online"></span>
-                        </div>
-
-                        <div className="runtime-item">
-                            <span className="runtime-icon java">☕</span>
-                            <div>
-                                <strong>Java</strong>
-                                <small>JDK compiler</small>
-                            </div>
-                            <span className="runtime-online"></span>
-                        </div>
+                        ))}
                     </div>
 
                     <div className="sidebar-bottom">
                         <div className="sandbox-status">
-                            <span className="shield">🛡</span>
+                            <span className="shield-icon">◇</span>
                             <div>
                                 <strong>Sandbox Active</strong>
                                 <small>Host access restricted</small>
                             </div>
+                            <span className="status-pulse"></span>
                         </div>
                     </div>
                 </aside>
 
                 <main className="workspace">
-                    <div className="editor-toolbar">
+                    <section className="editor-toolbar">
                         <div className="language-tabs">
-                            {Object.keys(languages).map((language) => (
+                            {Object.entries(languages).map(([language, item]) => (
                                 <button
                                     key={language}
                                     type="button"
@@ -474,7 +464,7 @@ function PolyglotEditor() {
                                     <span
                                         className={`tab-icon ${language.toLowerCase()}`}
                                     >
-                                        {languages[language].icon}
+                                        {item.icon}
                                     </span>
                                     {language}
                                 </button>
@@ -483,7 +473,7 @@ function PolyglotEditor() {
 
                         <div className="toolbar-actions">
                             <input
-                                className="small-button script-name-input"
+                                className="script-name-input"
                                 type="text"
                                 value={scriptName}
                                 onChange={(event) =>
@@ -494,7 +484,7 @@ function PolyglotEditor() {
                             />
 
                             <button
-                                className="small-button"
+                                className="action-button"
                                 type="button"
                                 onClick={handleSaveScript}
                                 disabled={
@@ -507,7 +497,7 @@ function PolyglotEditor() {
                             </button>
 
                             <button
-                                className="small-button"
+                                className="action-button"
                                 type="button"
                                 onClick={handleLoadScripts}
                                 disabled={
@@ -520,7 +510,7 @@ function PolyglotEditor() {
                             </button>
 
                             <select
-                                className="small-button saved-script-select"
+                                className="saved-script-select"
                                 value={selectedScriptId}
                                 onChange={(event) =>
                                     handleSelectSavedScript(event.target.value)
@@ -537,7 +527,7 @@ function PolyglotEditor() {
                             </select>
 
                             <button
-                                className="small-button"
+                                className="action-button delete-button"
                                 type="button"
                                 onClick={handleDeleteScript}
                                 disabled={
@@ -547,7 +537,7 @@ function PolyglotEditor() {
                                     comparisonRunning
                                 }
                             >
-                                {isDeletingScript ? "Deleting..." : "Delete Script"}
+                                {isDeletingScript ? "Deleting..." : "Delete"}
                             </button>
 
                             <button
@@ -559,31 +549,27 @@ function PolyglotEditor() {
                             >
                                 {isRunning ? (
                                     <>
-                                        <span
-                                            className="loading-spinner"
-                                            aria-hidden="true"
-                                        ></span>
+                                        <span className="loading-spinner"></span>
                                         Executing...
                                     </>
                                 ) : (
-                                    "▶ Run Code"
+                                    <>▶ Run Code</>
                                 )}
                             </button>
                         </div>
-                    </div>
+                    </section>
 
                     <section className="editor-section">
                         <div className="editor-header">
                             <div className="editor-file">
-                                <span className="file-language-icon">
+                                <span
+                                    className={`file-language-icon ${selectedLanguage.toLowerCase()}`}
+                                >
                                     {currentLanguage.icon}
                                 </span>
-                                <span>
-                                    {selectedLanguage === "Python"
-                                        ? "main.py"
-                                        : selectedLanguage === "JavaScript"
-                                        ? "script.js"
-                                        : "Main.java"}
+                                <span>{currentLanguage.filename}</span>
+                                <span className="unsaved-dot" title="Editor buffer">
+                                    ●
                                 </span>
                             </div>
 
@@ -624,6 +610,7 @@ function PolyglotEditor() {
                     <section className="performance-section">
                         <div className="performance-header">
                             <div>
+                                <div className="eyebrow">BENCHMARK CENTER</div>
                                 <h2>Performance Metrics</h2>
                                 <p>Polyglot Engine vs Traditional REST</p>
                             </div>
@@ -634,60 +621,66 @@ function PolyglotEditor() {
                                 onClick={runPerformanceComparison}
                                 disabled={comparisonRunning || isRunning}
                             >
-                                {comparisonRunning
-                                    ? "Running..."
-                                    : "Run Comparison"}
+                                {comparisonRunning ? (
+                                    <>
+                                        <span className="mini-spinner"></span>
+                                        Comparing...
+                                    </>
+                                ) : (
+                                    "Run Comparison →"
+                                )}
                             </button>
                         </div>
 
                         <div className="metrics-grid">
-                            <div className="metric-card">
-                                <div className="metric-icon">⚡</div>
-                                <div className="metric-content">
-                                    <span className="metric-label">
-                                        Polyglot Engine
-                                    </span>
-                                    <strong className="metric-value">
-                                        {polyglotTime === "--"
-                                            ? "-- ms"
-                                            : `${polyglotTime} ms`}
-                                    </strong>
-                                    <span className="metric-description">
-                                        Browser-to-backend request
-                                    </span>
+                            <div className="metric-card metric-polyglot">
+                                <div className="metric-topline">
+                                    <span className="metric-icon">ϟ</span>
+                                    <span className="metric-chip">ENGINE</span>
                                 </div>
+                                <span className="metric-label">Polyglot Engine</span>
+                                <strong className="metric-value">
+                                    {polyglotTime === "--"
+                                        ? "-- ms"
+                                        : `${polyglotTime} ms`}
+                                </strong>
+                                <span className="metric-description">
+                                    Browser-to-backend request
+                                </span>
                             </div>
 
-                            <div className="metric-card">
-                                <div className="metric-icon">🌐</div>
-                                <div className="metric-content">
-                                    <span className="metric-label">Mock REST</span>
-                                    <strong className="metric-value">
-                                        {mockRestTime === "--"
-                                            ? "-- ms"
-                                            : `${mockRestTime} ms`}
-                                    </strong>
-                                    <span className="metric-description">
-                                        Includes simulated delay
-                                    </span>
+                            <div className="metric-card metric-rest">
+                                <div className="metric-topline">
+                                    <span className="metric-icon">◎</span>
+                                    <span className="metric-chip">REST</span>
                                 </div>
+                                <span className="metric-label">Mock REST</span>
+                                <strong className="metric-value">
+                                    {mockRestTime === "--"
+                                        ? "-- ms"
+                                        : `${mockRestTime} ms`}
+                                </strong>
+                                <span className="metric-description">
+                                    Includes simulated delay
+                                </span>
                             </div>
 
-                            <div className="metric-card">
-                                <div className="metric-icon">📊</div>
-                                <div className="metric-content">
-                                    <span className="metric-label">
-                                        Performance Difference
-                                    </span>
-                                    <strong className="metric-value">
-                                        {performanceDifference === "--"
-                                            ? "-- ms"
-                                            : `${performanceDifference} ms`}
-                                    </strong>
-                                    <span className="metric-description">
-                                        REST time − Polyglot time
-                                    </span>
+                            <div className="metric-card metric-difference">
+                                <div className="metric-topline">
+                                    <span className="metric-icon">↗</span>
+                                    <span className="metric-chip">DELTA</span>
                                 </div>
+                                <span className="metric-label">
+                                    Performance Difference
+                                </span>
+                                <strong className="metric-value">
+                                    {performanceDifference === "--"
+                                        ? "-- ms"
+                                        : `${performanceDifference} ms`}
+                                </strong>
+                                <span className="metric-description">
+                                    REST time − Polyglot time
+                                </span>
                             </div>
                         </div>
                     </section>
@@ -695,19 +688,21 @@ function PolyglotEditor() {
                     <section className="console">
                         <div className="console-header">
                             <div className="console-tabs">
-                                <span className="console-tab active">
-                                    TERMINAL
-                                </span>
+                                <span className="console-tab active">TERMINAL</span>
                                 <span className="console-tab">OUTPUT</span>
                                 <span className="console-tab">PROBLEMS</span>
                             </div>
 
                             <div className="console-meta">
-                                <span>Execution: {executionTime}</span>
+                                <span>
+                                    {isRunning
+                                        ? "Executing..."
+                                        : `Execution: ${executionTime}`}
+                                </span>
                                 <button
                                     className="clear-button"
                                     type="button"
-                                    onClick={() => setOutput("Console cleared.")}
+                                    onClick={clearConsole}
                                 >
                                     Clear
                                 </button>
@@ -731,12 +726,13 @@ function PolyglotEditor() {
                         <div className="status-left">
                             <span>⬢ {selectedLanguage}</span>
                             <span>main</span>
-                            <span>
+                            <span className="ready-status">
+                                <span className="ready-dot"></span>
                                 {isRunning
-                                    ? "⏳ Executing"
+                                    ? "Executing"
                                     : comparisonRunning
-                                    ? "⏳ Comparing"
-                                    : "✓ Ready"}
+                                    ? "Comparing"
+                                    : "Ready"}
                             </span>
                         </div>
 

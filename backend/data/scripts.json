@@ -8,4 +8,9 @@
   "name" : "My Script",
   "language" : "python",
   "code" : "print(\"Hello from PolyglotMesh\")"
+}, {
+  "id" : "f1e7248f-775d-407e-8223-8948c599aa9e",
+  "name" : "My Script",
+  "language" : "javascript",
+  "code" : "console.log(\"Hello from JavaScript\");"
 } ]
